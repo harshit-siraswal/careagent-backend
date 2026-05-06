@@ -14,6 +14,9 @@ Apply migrations in this order:
 1. `migrations/001_initial_backend_platform.sql`
 2. `migrations/002_health_device_integrations.sql`
 3. `migrations/003_channels_calls_escalation.sql`
+4. `migrations/004_security_lint_fixes.sql`
+5. `migrations/005_performance_lint_fixes.sql`
+6. `migrations/006_drop_generated_duplicate_indexes.sql`
 
 The migrations assume a fresh database or a database where Supabase migration history prevents re-applying the same files. Do not re-run them manually against an already migrated database unless you have confirmed the target schema state.
 
@@ -48,6 +51,8 @@ Without `SUPABASE_DB_URL`, the script prints the validation SQL. With a database
 - Policy counts per public table.
 - Table comments.
 - The append-only `audit_logs` trigger.
+
+The hosted `careagent-backend` project was also checked with Supabase advisors after migration. Security advisories were clear, and targeted performance checks confirmed no missing FK indexes, no duplicate permissive policy groups, and no duplicate nonunique index groups.
 
 ## RLS Notes
 
