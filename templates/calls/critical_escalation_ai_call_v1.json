@@ -1,0 +1,22 @@
+{
+  "id": "critical_escalation_ai_call_v1",
+  "locale": "en-IN",
+  "version": 1,
+  "status": "approved",
+  "ai_disclosure": "This is CareAgent, an AI assistant calling about a health alert.",
+  "opening_text": "Please listen carefully. This call may require a quick acknowledgement.",
+  "body_template": "{patient_name} has a {severity} health risk. Reason: {reason}. Press 1 or say acknowledge if you are taking responsibility now.",
+  "variables": ["patient_name", "severity", "reason"],
+  "dtmf_options": {
+    "1": "acknowledge",
+    "9": "repeat"
+  },
+  "speech_intents": {
+    "acknowledge": ["acknowledge", "I will check", "I am responding"],
+    "repeat": ["repeat", "say again"]
+  },
+  "max_duration_seconds": 120,
+  "recording_allowed": false,
+  "transcript_allowed": false,
+  "active": true
+}

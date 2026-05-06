@@ -1,0 +1,14 @@
+{
+  "id": "urgent_vitals_alert_v1",
+  "channel": "whatsapp",
+  "category": "escalation",
+  "locale": "en-IN",
+  "version": 1,
+  "status": "approved",
+  "provider_template_name": "urgent_vitals_alert_v1",
+  "business_initiated": true,
+  "requires_approval": true,
+  "body": "CareAgent alert for {patient_name}: {severity} risk. Reason: {reason}. Acknowledge: {ack_url}",
+  "variables": ["patient_name", "severity", "reason", "ack_url"],
+  "active": true
+}

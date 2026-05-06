@@ -1,1 +1,1 @@
-"""CareAgent backend API skeleton."""
+"""CareAgent backend implementation modules."""
