@@ -1,0 +1,13 @@
+{
+  "id": "email_escalation_summary_v1",
+  "channel": "email",
+  "category": "escalation",
+  "locale": "en-IN",
+  "version": 1,
+  "status": "approved",
+  "business_initiated": false,
+  "requires_approval": false,
+  "body": "CareAgent escalation summary for {patient_name}\nSeverity: {severity}\nReason: {reason}\nAcknowledge: {ack_url}",
+  "variables": ["patient_name", "severity", "reason", "ack_url"],
+  "active": true
+}

@@ -1,0 +1,13 @@
+{
+  "id": "push_urgent_vitals_alert_v1",
+  "channel": "push",
+  "category": "escalation",
+  "locale": "en-IN",
+  "version": 1,
+  "status": "approved",
+  "business_initiated": false,
+  "requires_approval": false,
+  "body": "{severity} CareAgent alert: {reason}",
+  "variables": ["severity", "reason"],
+  "active": true
+}
