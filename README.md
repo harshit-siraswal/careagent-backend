@@ -16,6 +16,9 @@ This directory contains the backend API and data-platform contract for the CareA
 - `docs/audit-events.md` - audit event catalogue and required audit semantics.
 - `tests/backend-contract-test-plan.md` - unit and integration test plan for the backend implementation.
 - `tests/emergency_simulation_scenarios.md` and `tests/emergency_simulation_cases.json` - Scenario-driven escalation simulation fixtures.
+- `scripts/apply_migrations.ps1` - Applies the SQL migrations in order with `psql` and a supplied Postgres connection URL.
+- `scripts/validate_migrations.ps1` - Runs validation queries for RLS, policies, comments, and audit immutability.
+- `docs/supabase-deployment.md` - Supabase project deployment notes for `careagent-backend` (`kgkfrrffrjfltswwcsmw`, `ap-south-1`).
 
 ## Non-Negotiable Backend Invariants
 
@@ -49,3 +52,15 @@ Verify locally:
 python -m compileall app
 python -m pytest
 ```
+
+## Supabase Migration Quickstart
+
+Project ref: `kgkfrrffrjfltswwcsmw` (`careagent-backend`, `ap-south-1`).
+
+```powershell
+$env:SUPABASE_DB_URL = "postgresql://postgres:<password>@db.kgkfrrffrjfltswwcsmw.supabase.co:5432/postgres"
+.\scripts\apply_migrations.ps1
+.\scripts\validate_migrations.ps1
+```
+
+The scripts use a Postgres connection string and do not assume a Supabase `service_role` JWT is available.

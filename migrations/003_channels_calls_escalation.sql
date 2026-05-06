@@ -315,6 +315,25 @@ CREATE TRIGGER channel_dispatch_attempts_set_updated_at BEFORE UPDATE ON channel
 CREATE TRIGGER escalation_simulation_runs_set_updated_at BEFORE UPDATE ON escalation_simulation_runs
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+COMMENT ON TABLE channel_provider_configs IS
+  'Provider configuration registry. secret_ref points to external secret storage; no provider secrets belong in table rows.';
+COMMENT ON TABLE channel_account_links IS
+  'PHI/PII-bearing patient channel identity links for messaging and escalation.';
+COMMENT ON TABLE message_templates IS
+  'Outbound message template registry. Template bodies must not include patient-specific PHI.';
+COMMENT ON TABLE call_scripts IS
+  'Voice call script registry with mandatory AI disclosure text.';
+COMMENT ON TABLE channel_dispatch_attempts IS
+  'PHI-bearing outbound dispatch attempts. payload_json must be minimized and redacted where possible.';
+COMMENT ON TABLE delivery_receipts IS
+  'PHI-bearing provider delivery receipts. Store payload hashes instead of raw provider payloads.';
+COMMENT ON TABLE call_events IS
+  'PHI-bearing voice event history. Transcript fields must be redacted summaries, not raw recordings.';
+COMMENT ON TABLE escalation_acknowledgements IS
+  'PHI-bearing human acknowledgement records for emergency escalation review.';
+COMMENT ON TABLE escalation_simulation_runs IS
+  'Patient-scoped emergency simulation results for safety QA.';
+
 ALTER TABLE channel_provider_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE channel_account_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_templates ENABLE ROW LEVEL SECURITY;

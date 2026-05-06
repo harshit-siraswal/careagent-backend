@@ -16,3 +16,17 @@ Recommended final order:
 3. Channel, call, dispatch, and emergency simulation extensions.
 
 The order above keeps ingestion/metric primitives available before channel escalation simulation tests reference device-generated risk scenarios.
+
+## Supabase project
+
+The hosted Supabase project created for this branch is:
+
+- Name: `careagent-backend`
+- Ref: `kgkfrrffrjfltswwcsmw`
+- Region: `ap-south-1`
+
+See `docs/supabase-deployment.md` for application and validation commands.
+
+## RLS baseline
+
+Every table in the exposed `public` schema must have RLS enabled. PHI-bearing tables are patient scoped with policies based on backend-set `app.user_id` and `app.role` settings. Catalogue/configuration tables are read-only where safe and admin-scoped for writes. Internal operational tables such as `audit_logs`, `idempotency_keys`, and `outbox_events` remain RLS protected because they may carry PHI or PHI-derived response metadata.
