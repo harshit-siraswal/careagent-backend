@@ -26,3 +26,26 @@ This directory contains the backend API and data-platform contract for the CareA
 5. Escalation starts, risk-event creation, document upload sessions, webhook side effects, and outbound actions use idempotency keys.
 6. Raw documents are uploaded directly to object storage and remain blocked from OCR/extraction/download until malware scan is clean.
 7. Observation writes are batched, partitioned by time, indexed by `(patient_id, metric_code, observed_at desc)`, and emitted through the outbox for risk processing.
+
+## Backend API Skeleton
+
+This branch includes a minimal FastAPI skeleton for local contract iteration. It does not integrate a real auth provider, database, object storage, or queue yet. Auth, patient scope, and audit behavior are placeholder hooks:
+
+- Authenticated routes require `Authorization: Bearer <token>`.
+- The placeholder actor is supplied with `X-CareAgent-Role`, `X-CareAgent-Patient-Id`, and `X-CareAgent-Permissions`.
+- PHI routes call patient-scope checks and append audit events to request state.
+- Idempotent stubs such as document upload and escalation start require `Idempotency-Key`.
+
+Run locally:
+
+```powershell
+python -m pip install -e ".[test]"
+python -m uvicorn app.main:app --reload
+```
+
+Verify locally:
+
+```powershell
+python -m compileall app
+python -m pytest
+```
