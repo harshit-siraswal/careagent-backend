@@ -1,0 +1,327 @@
+{
+  "version": "0.1.0",
+  "generated_for": "prompt-04-health-device-integrations",
+  "clock": {
+    "timezone": "Asia/Kolkata",
+    "default_start_at": "2026-05-06T18:30:00+05:30"
+  },
+  "scenarios": [
+    {
+      "scenario_code": "fresh_normal_day_health_connect",
+      "display_name": "Fresh normal day from Health Connect",
+      "source_type": "health_connect",
+      "connector_code": "health_connect",
+      "supported_metrics": ["heart_rate", "blood_pressure_systolic", "blood_pressure_diastolic", "spo2", "step_count"],
+      "observations": [
+        {
+          "offset_seconds": 0,
+          "metric_code": "heart_rate",
+          "value_numeric": 76,
+          "unit": "bpm",
+          "observed_at": "2026-05-06T18:30:00+05:30",
+          "source_label": "Health Connect - Example Watch",
+          "reliability_tier": "os_aggregator",
+          "source_record_id": "hc_hr_001",
+          "raw_payload": {
+            "record_type": "HeartRateRecord",
+            "metadata": {
+              "id": "hc_hr_001",
+              "dataOrigin": "com.example.watch"
+            },
+            "samples": [
+              {
+                "time": "2026-05-06T18:30:00+05:30",
+                "beatsPerMinute": 76
+              }
+            ]
+          },
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.8,
+            "quality_flags": []
+          }
+        },
+        {
+          "offset_seconds": 60,
+          "metric_code": "blood_pressure_systolic",
+          "value_numeric": 122,
+          "unit": "mmHg",
+          "observed_at": "2026-05-06T18:31:00+05:30",
+          "source_label": "Health Connect - Example BP App",
+          "reliability_tier": "os_aggregator",
+          "source_record_id": "hc_bp_001_sys",
+          "group_id": "hc_bp_001",
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.8,
+            "quality_flags": []
+          }
+        },
+        {
+          "offset_seconds": 60,
+          "metric_code": "blood_pressure_diastolic",
+          "value_numeric": 78,
+          "unit": "mmHg",
+          "observed_at": "2026-05-06T18:31:00+05:30",
+          "source_label": "Health Connect - Example BP App",
+          "reliability_tier": "os_aggregator",
+          "source_record_id": "hc_bp_001_dia",
+          "group_id": "hc_bp_001",
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.8,
+            "quality_flags": []
+          }
+        },
+        {
+          "offset_seconds": 120,
+          "metric_code": "spo2",
+          "value_numeric": 97,
+          "unit": "%",
+          "observed_at": "2026-05-06T18:32:00+05:30",
+          "source_label": "Health Connect - Example Oximeter App",
+          "reliability_tier": "os_aggregator",
+          "source_record_id": "hc_spo2_001",
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.8,
+            "quality_flags": []
+          }
+        },
+        {
+          "offset_seconds": 180,
+          "metric_code": "step_count",
+          "value_numeric": 6420,
+          "unit": "count",
+          "observed_at": "2026-05-06T18:33:00+05:30",
+          "source_label": "Health Connect - Example Watch",
+          "reliability_tier": "os_aggregator",
+          "source_record_id": "hc_steps_001",
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.8,
+            "quality_flags": []
+          }
+        }
+      ],
+      "expected_risk_events": []
+    },
+    {
+      "scenario_code": "critical_spo2_drop_ble",
+      "display_name": "Critical SpO2 drop from BLE pulse oximeter",
+      "source_type": "ble",
+      "connector_code": "ble_medical_profiles",
+      "supported_metrics": ["spo2", "heart_rate"],
+      "device": {
+        "brand": "Example",
+        "model": "BLE PulseOx 100",
+        "profile": "pulse_oximeter",
+        "service_uuid": "00001822-0000-1000-8000-00805f9b34fb"
+      },
+      "observations": [
+        {
+          "offset_seconds": 0,
+          "metric_code": "spo2",
+          "value_numeric": 96,
+          "unit": "%",
+          "observed_at": "2026-05-06T18:30:00+05:30",
+          "source_label": "BLE Pulse Oximeter",
+          "reliability_tier": "standard_ble",
+          "source_record_id": "ble_plx_001_spo2",
+          "raw_payload": {
+            "profile": "pulse_oximeter",
+            "characteristic_uuid": "00002a5e-0000-1000-8000-00805f9b34fb",
+            "parsed": {
+              "spo2_percent": 96,
+              "pulse_rate_bpm": 82,
+              "device_time": "2026-05-06T18:30:00+05:30"
+            }
+          },
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.85,
+            "quality_flags": []
+          }
+        },
+        {
+          "offset_seconds": 90,
+          "metric_code": "spo2",
+          "value_numeric": 86,
+          "unit": "%",
+          "observed_at": "2026-05-06T18:31:30+05:30",
+          "source_label": "BLE Pulse Oximeter",
+          "reliability_tier": "standard_ble",
+          "source_record_id": "ble_plx_002_spo2",
+          "raw_payload": {
+            "profile": "pulse_oximeter",
+            "characteristic_uuid": "00002a5e-0000-1000-8000-00805f9b34fb",
+            "parsed": {
+              "spo2_percent": 86,
+              "pulse_rate_bpm": 104,
+              "device_time": "2026-05-06T18:31:30+05:30",
+              "measurement_status": "valid"
+            }
+          },
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.85,
+            "quality_flags": ["critical_low_value"]
+          }
+        },
+        {
+          "offset_seconds": 90,
+          "metric_code": "heart_rate",
+          "value_numeric": 104,
+          "unit": "bpm",
+          "observed_at": "2026-05-06T18:31:30+05:30",
+          "source_label": "BLE Pulse Oximeter",
+          "reliability_tier": "standard_ble",
+          "source_record_id": "ble_plx_002_pulse",
+          "group_id": "ble_plx_002",
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.85,
+            "quality_flags": ["derived_from_same_measurement"]
+          }
+        }
+      ],
+      "expected_risk_events": [
+        {
+          "severity": "critical",
+          "reason_contains": "SpO2",
+          "requires_policy_approval": true
+        }
+      ]
+    },
+    {
+      "scenario_code": "manual_glucose_low_reliability",
+      "display_name": "Manual glucose entry requires confirmation for high-risk action",
+      "source_type": "manual",
+      "connector_code": "manual_entry",
+      "supported_metrics": ["blood_glucose"],
+      "observations": [
+        {
+          "offset_seconds": 0,
+          "metric_code": "blood_glucose",
+          "value_numeric": 58,
+          "unit": "mg/dL",
+          "observed_at": "2026-05-06T18:30:00+05:30",
+          "source_label": "Manual entry",
+          "reliability_tier": "manual_or_ocr",
+          "source_record_id": "manual_glucose_001",
+          "review_status": "approved",
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.55,
+            "quality_flags": ["manual_source", "low_glucose_value"]
+          }
+        }
+      ],
+      "expected_risk_events": [
+        {
+          "severity": "high",
+          "reason_contains": "glucose",
+          "requires_patient_confirmation": true
+        }
+      ]
+    },
+    {
+      "scenario_code": "stale_watch_data_no_emergency",
+      "display_name": "Stale watch data should not be treated as live deterioration",
+      "source_type": "healthkit",
+      "connector_code": "healthkit",
+      "supported_metrics": ["heart_rate"],
+      "observations": [
+        {
+          "offset_seconds": 0,
+          "metric_code": "heart_rate",
+          "value_numeric": 42,
+          "unit": "bpm",
+          "observed_at": "2026-05-06T17:50:00+05:30",
+          "ingested_at": "2026-05-06T18:30:00+05:30",
+          "source_label": "Apple Health - Example Watch",
+          "reliability_tier": "os_aggregator",
+          "source_record_id": "hk_hr_stale_001",
+          "expected_quality": {
+            "freshness": "stale",
+            "quality_score_max": 0.7,
+            "quality_flags": ["stale"]
+          }
+        }
+      ],
+      "expected_risk_events": [
+        {
+          "severity": "low",
+          "reason_contains": "stale",
+          "should_not_escalate_as_emergency": true
+        }
+      ]
+    },
+    {
+      "scenario_code": "fall_detected_vendor_event",
+      "display_name": "Fall event from vendor connector with source metadata",
+      "source_type": "vendor_api",
+      "connector_code": "vendor_api_framework",
+      "supported_metrics": ["fall_detected", "heart_rate"],
+      "observations": [
+        {
+          "offset_seconds": 0,
+          "metric_code": "fall_detected",
+          "value_text": "true",
+          "unit": "boolean",
+          "observed_at": "2026-05-06T18:30:00+05:30",
+          "source_label": "Example Wearable Cloud",
+          "reliability_tier": "vendor_api",
+          "source_record_id": "vendor_fall_001",
+          "raw_payload": {
+            "event_id": "vendor_fall_001",
+            "event_type": "fall_detected",
+            "confidence": 0.88,
+            "device": {
+              "brand": "Example",
+              "model": "Fall Watch Pro"
+            }
+          },
+          "expected_quality": {
+            "freshness": "fresh",
+            "quality_score_min": 0.75,
+            "quality_flags": ["vendor_event"]
+          }
+        }
+      ],
+      "expected_risk_events": [
+        {
+          "severity": "critical",
+          "reason_contains": "fall",
+          "requires_policy_approval": true
+        }
+      ]
+    }
+  ],
+  "malformed_ble_packets": [
+    {
+      "case_code": "heart_rate_missing_value",
+      "profile": "heart_rate",
+      "characteristic_uuid": "00002a37-0000-1000-8000-00805f9b34fb",
+      "hex": "01",
+      "expected_error": "packet_too_short"
+    },
+    {
+      "case_code": "blood_pressure_unsupported_unit_flag",
+      "profile": "blood_pressure",
+      "characteristic_uuid": "00002a35-0000-1000-8000-00805f9b34fb",
+      "hex": "ff000000",
+      "expected_error": "invalid_or_unsupported_flags"
+    },
+    {
+      "case_code": "pulse_oximeter_impossible_spo2",
+      "profile": "pulse_oximeter",
+      "characteristic_uuid": "00002a5e-0000-1000-8000-00805f9b34fb",
+      "parsed": {
+        "spo2_percent": 132,
+        "pulse_rate_bpm": 80
+      },
+      "expected_error": "implausible_value"
+    }
+  ]
+}

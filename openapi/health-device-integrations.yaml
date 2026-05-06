@@ -1,0 +1,524 @@
+openapi: 3.1.0
+info:
+  title: CareAgent Health Device Integrations API
+  version: 0.1.0
+  description: Contracts for device catalog, compatibility, connector accounts, normalized observations, and simulator runs.
+servers:
+  - url: https://api.careagent.local
+    description: Placeholder API base URL
+paths:
+  /device-catalog:
+    get:
+      summary: Search the global device catalog
+      operationId: searchDeviceCatalog
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: metric_code
+          in: query
+          schema:
+            type: string
+        - name: platform
+          in: query
+          schema:
+            type: string
+            enum: [ios, android, web]
+        - name: connection_method
+          in: query
+          schema:
+            type: string
+            enum: [healthkit, health_connect, ble, vendor_api, fhir, manual, ocr]
+      responses:
+        "200":
+          description: Catalog search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DeviceCatalogEntry"
+  /device-catalog/{catalog_device_id}:
+    get:
+      summary: Get a device catalog entry
+      operationId: getDeviceCatalogEntry
+      parameters:
+        - $ref: "#/components/parameters/CatalogDeviceId"
+      responses:
+        "200":
+          description: Device catalog entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCatalogEntry"
+  /device-compatibility/check:
+    post:
+      summary: Check likely compatibility for a device and patient platform
+      operationId: checkDeviceCompatibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompatibilityCheckRequest"
+      responses:
+        "200":
+          description: Ranked compatibility options. Results are not universal compatibility guarantees.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatibilityCheckResponse"
+  /device-support-requests:
+    post:
+      summary: Request support for an unlisted or unsupported device
+      operationId: createDeviceSupportRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSupportRequestCreate"
+      responses:
+        "202":
+          description: Support request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSupportRequest"
+  /patients/{patient_id}/connector-accounts:
+    get:
+      summary: List patient connector accounts
+      operationId: listPatientConnectorAccounts
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+      responses:
+        "200":
+          description: Connector accounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ConnectorAccount"
+    post:
+      summary: Create or activate a patient connector account
+      operationId: createPatientConnectorAccount
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorAccountCreate"
+      responses:
+        "201":
+          description: Connector account created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorAccount"
+  /patients/{patient_id}/connector-accounts/{account_id}:
+    delete:
+      summary: Revoke a connector account
+      operationId: revokePatientConnectorAccount
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Connector account revoked.
+  /patients/{patient_id}/observations:
+    post:
+      summary: Submit normalized or raw-backed observations
+      operationId: createPatientObservations
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ObservationIngestionRequest"
+      responses:
+        "202":
+          description: Observations accepted for normalization and quality assessment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObservationIngestionResponse"
+  /patients/{patient_id}/simulator/runs:
+    post:
+      summary: Run a deterministic device simulator scenario
+      operationId: runDeviceSimulatorScenario
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulatorRunRequest"
+      responses:
+        "202":
+          description: Simulator run queued or completed depending on mode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorRunResponse"
+components:
+  parameters:
+    PatientId:
+      name: patient_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CatalogDeviceId:
+      name: catalog_device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    DeviceCatalogEntry:
+      type: object
+      required:
+        - id
+        - brand
+        - model
+        - category
+        - connection_methods
+        - supported_metrics
+        - validation_status
+      properties:
+        id:
+          type: string
+          format: uuid
+        brand:
+          type: string
+        model:
+          type: string
+        category:
+          type: string
+        support_tier:
+          type: string
+        connection_methods:
+          type: array
+          items:
+            type: string
+            enum: [healthkit, health_connect, ble, vendor_api, fhir, manual, ocr]
+        supported_platforms:
+          type: array
+          items:
+            type: string
+            enum: [ios, android, web]
+        supported_metrics:
+          type: array
+          items:
+            type: string
+        setup_instructions:
+          type: object
+          additionalProperties: true
+        latency_expectation:
+          type: string
+        known_limitations:
+          type: array
+          items:
+            type: string
+        validation_status:
+          type: string
+          enum: [untested, community_tested, internally_tested, clinically_validated, deprecated]
+        regulatory_notes:
+          type: string
+    CompatibilityCheckRequest:
+      type: object
+      required: [platform]
+      properties:
+        platform:
+          type: string
+          enum: [ios, android]
+        brand:
+          type: string
+        model:
+          type: string
+        category:
+          type: string
+        requested_metrics:
+          type: array
+          items:
+            type: string
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+    CompatibilityCheckResponse:
+      type: object
+      required: [claim, options]
+      properties:
+        claim:
+          type: string
+          enum: [supported, likely_supported, fallback_available, unknown, unsupported]
+        catalog_device_id:
+          type: string
+          format: uuid
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompatibilityOption"
+        user_message:
+          type: string
+          description: User-facing wording that must avoid universal compatibility claims.
+    CompatibilityOption:
+      type: object
+      required: [rank, connection_method, confidence, label]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        connection_method:
+          type: string
+          enum: [healthkit, health_connect, ble, vendor_api, fhir, manual, ocr, request_support]
+        confidence:
+          type: string
+          enum: [high, medium, low, unknown]
+        label:
+          type: string
+        setup_hint:
+          type: string
+        expected_latency:
+          type: string
+        limitations:
+          type: array
+          items:
+            type: string
+    DeviceSupportRequestCreate:
+      type: object
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+        brand:
+          type: string
+        model:
+          type: string
+        category:
+          type: string
+        requested_metrics:
+          type: array
+          items:
+            type: string
+        platform:
+          type: string
+        country_code:
+          type: string
+        notes:
+          type: string
+    DeviceSupportRequest:
+      allOf:
+        - $ref: "#/components/schemas/DeviceSupportRequestCreate"
+        - type: object
+          required: [id, status, created_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [open, triaged, planned, unsupported, completed, duplicate]
+            created_at:
+              type: string
+              format: date-time
+    ConnectorAccountCreate:
+      type: object
+      required: [connector_code]
+      properties:
+        connector_code:
+          type: string
+          enum: [healthkit, health_connect, ble_medical_profiles, vendor_api_framework, fhir_import, manual_entry, ocr_reading]
+        external_account_hash:
+          type: string
+        token_vault_ref:
+          type: string
+        permission_state:
+          type: object
+          additionalProperties: true
+    ConnectorAccount:
+      allOf:
+        - $ref: "#/components/schemas/ConnectorAccountCreate"
+        - type: object
+          required: [id, patient_id, status, created_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [pending, active, permission_denied, reauth_required, revoked, failed]
+            last_successful_sync_at:
+              type: string
+              format: date-time
+            last_error_code:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+    ObservationIngestionRequest:
+      type: object
+      required: [source_type, observations]
+      properties:
+        connector_code:
+          type: string
+        connector_account_id:
+          type: string
+          format: uuid
+        source_type:
+          type: string
+          enum: [healthkit, health_connect, ble, vendor_api, fhir, ocr, manual, simulator]
+        raw_payload:
+          type: object
+          additionalProperties: true
+        observations:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ObservationCandidate"
+    ObservationCandidate:
+      type: object
+      required: [metric_code, unit, observed_at]
+      properties:
+        metric_code:
+          type: string
+        value_numeric:
+          type: number
+        value_text:
+          type: string
+        unit:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        source_label:
+          type: string
+        source_device:
+          type: object
+          additionalProperties: true
+        reliability_tier:
+          type: string
+          enum: [clinical, os_aggregator, standard_ble, vendor_api, manual_or_ocr, unknown]
+        source_record_id:
+          type: string
+        review_status:
+          type: string
+          enum: [pending, approved, corrected, rejected]
+        fhir_json:
+          type: object
+          additionalProperties: true
+    ObservationIngestionResponse:
+      type: object
+      required: [accepted_count, rejected_count]
+      properties:
+        accepted_count:
+          type: integer
+          minimum: 0
+        rejected_count:
+          type: integer
+          minimum: 0
+        observations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObservationResult"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/NormalizationError"
+    ObservationResult:
+      type: object
+      required: [id, metric_code, unit, observed_at, freshness, quality_score]
+      properties:
+        id:
+          type: string
+          format: uuid
+        metric_code:
+          type: string
+        value_numeric:
+          type: number
+        value_text:
+          type: string
+        unit:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        freshness:
+          type: string
+          enum: [fresh, delayed, stale, future_timestamp, unknown]
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        quality_flags:
+          type: array
+          items:
+            type: string
+    NormalizationError:
+      type: object
+      required: [error_code, error_message]
+      properties:
+        external_metric_code:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+    SimulatorRunRequest:
+      type: object
+      required: [scenario_code]
+      properties:
+        scenario_code:
+          type: string
+        mode:
+          type: string
+          enum: [dry_run, ingest]
+          default: dry_run
+        start_at:
+          type: string
+          format: date-time
+        speed_multiplier:
+          type: number
+          minimum: 0
+          default: 1
+    SimulatorRunResponse:
+      type: object
+      required: [scenario_code, mode, emitted_count]
+      properties:
+        scenario_code:
+          type: string
+        mode:
+          type: string
+        emitted_count:
+          type: integer
+          minimum: 0
+        expected_risk_events:
+          type: array
+          items:
+            type: string

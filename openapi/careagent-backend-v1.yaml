@@ -1,0 +1,2250 @@
+openapi: 3.1.0
+info:
+  title: CareAgent Backend API
+  version: 0.1.0
+  summary: Patient-scoped backend contract for CareAgent MVP.
+  description: >
+    Every authenticated operation must resolve the actor from the bearer token,
+    enforce role plus patient-scoped permissions, and create audit events for PHI
+    access or external actions. Endpoints with x-idempotent require the
+    Idempotency-Key header.
+servers:
+  - url: https://api.careagent.example/v1
+security:
+  - BearerAuth: []
+tags:
+  - name: Auth
+  - name: Patients
+  - name: Consent
+  - name: Devices
+  - name: Observations
+  - name: Documents
+  - name: Medicines
+  - name: Risk
+  - name: Escalation
+  - name: Agent
+  - name: Webhooks
+  - name: Audit
+
+paths:
+  /auth/session:
+    post:
+      tags: [Auth]
+      summary: Exchange provider token for a CareAgent session.
+      security: []
+      x-audit: auth.session_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthSessionRequest'
+      responses:
+        '200':
+          description: Session resolved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /me:
+    get:
+      tags: [Auth]
+      summary: Return the current user and patient access grants.
+      x-audit: auth.me_viewed
+      responses:
+        '200':
+          description: Current account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients:
+    post:
+      tags: [Patients]
+      summary: Create a patient profile for the authenticated patient account.
+      x-required-role: [patient, admin]
+      x-patient-scope: self-or-admin
+      x-audit: patient.profile_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreateRequest'
+      responses:
+        '201':
+          description: Patient profile created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientProfile'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Patients]
+      summary: List patient profiles visible to the current actor.
+      x-required-role: [caretaker, doctor, nurse, admin]
+      x-patient-scope: accessible-patients
+      x-audit: patient.roster_viewed
+      responses:
+        '200':
+          description: Visible patients.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PatientSummary'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Patients]
+      summary: Read one patient profile.
+      x-required-permission: patient:read
+      x-patient-scope: patient_id
+      x-audit: patient.profile_viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Patient profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientProfile'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Patients]
+      summary: Update patient profile.
+      x-required-permission: patient:write
+      x-patient-scope: patient_id
+      x-audit: patient.profile_updated
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientUpdateRequest'
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientProfile'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/care-team:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Patients]
+      summary: List care team members and access grants.
+      x-required-permission: care_team:read
+      x-patient-scope: patient_id
+      x-audit: care_team.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Care team.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CareTeamMember'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Patients]
+      summary: Add a care team member and optional patient access grant.
+      x-required-permission: care_team:write
+      x-patient-scope: patient_id
+      x-audit: care_team.member_added
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CareTeamMemberCreateRequest'
+      responses:
+        '201':
+          description: Care team member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareTeamMember'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/consents:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Consent]
+      summary: List active and historical consent grants.
+      x-required-permission: consent:read
+      x-patient-scope: patient_id
+      x-audit: consent.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Consents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConsentGrant'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Consent]
+      summary: Grant consent and append a consent ledger event.
+      x-required-permission: consent:write
+      x-patient-scope: patient_id
+      x-audit: consent.granted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentGrantRequest'
+      responses:
+        '201':
+          description: Consent grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentGrant'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/consents/{consent_id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+      - $ref: '#/components/parameters/ConsentId'
+    post:
+      tags: [Consent]
+      summary: Revoke a consent grant and append a ledger event.
+      x-required-permission: consent:write
+      x-patient-scope: patient_id
+      x-audit: consent.revoked
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeConsentRequest'
+      responses:
+        '200':
+          description: Revoked consent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentGrant'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /device-catalog:
+    get:
+      tags: [Devices]
+      summary: Public device compatibility catalog.
+      security: []
+      responses:
+        '200':
+          description: Supported device catalog entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeviceCatalogEntry'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/devices:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Devices]
+      summary: List patient devices and connection state.
+      x-required-permission: devices:read
+      x-patient-scope: patient_id
+      x-audit: devices.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Devices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Devices]
+      summary: Register a patient device.
+      x-required-permission: devices:write
+      x-patient-scope: patient_id
+      x-audit: device.registered
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCreateRequest'
+      responses:
+        '201':
+          description: Device.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/observations:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Observations]
+      summary: Query patient observations.
+      x-required-permission: observations:read
+      x-patient-scope: patient_id
+      x-audit: observations.queried
+      x-phi: true
+      parameters:
+        - name: metric_code
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Observations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Observations]
+      summary: Ingest one or more observations.
+      x-required-permission: observations:write
+      x-patient-scope: patient_id
+      x-audit: observation.created
+      x-idempotent: recommended
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservationBatchCreateRequest'
+      responses:
+        '202':
+          description: Accepted for ingestion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationBatchCreateResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/vitals/latest:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Observations]
+      summary: Latest vital reading by metric.
+      x-required-permission: observations:read
+      x-patient-scope: patient_id
+      x-audit: vitals.latest_viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Latest vitals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestVitalsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/documents:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Documents]
+      summary: List patient documents.
+      x-required-permission: documents:read
+      x-patient-scope: patient_id
+      x-audit: documents.list_viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Documents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MedicalDocument'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Documents]
+      summary: Create an object-storage upload session for a raw document.
+      description: >
+        The client uploads directly to object storage using the returned signed
+        URL. Processing remains blocked until malware_scan_status is clean.
+      x-required-permission: documents:write
+      x-patient-scope: patient_id
+      x-audit: document.upload_session_created
+      x-idempotent: required
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadInitRequest'
+      responses:
+        '201':
+          description: Upload session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadInitResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/documents/{document_id}:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      tags: [Documents]
+      summary: Get document metadata and extracted facts.
+      x-required-permission: documents:read
+      x-patient-scope: patient_id
+      x-audit: document.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetailResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/documents/{document_id}/status:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      tags: [Documents]
+      summary: Get malware scan, OCR, and extraction status.
+      x-required-permission: documents:read
+      x-patient-scope: patient_id
+      x-audit: document.status_viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Processing status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentProcessingStatus'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/documents/{document_id}/review:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      tags: [Documents]
+      summary: Approve, correct, or reject extracted facts.
+      x-required-permission: documents:write
+      x-patient-scope: patient_id
+      x-audit: document.extraction_reviewed
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentReviewRequest'
+      responses:
+        '200':
+          description: Updated extracted facts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetailResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/questions:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    post:
+      tags: [Documents]
+      summary: Ask a source-cited question over approved patient records.
+      x-required-permission: documents:read
+      x-patient-scope: patient_id
+      x-audit: document.question_answered
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientQuestionRequest'
+      responses:
+        '200':
+          description: Grounded answer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientQuestionResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/medicines:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Medicines]
+      summary: List patient medicines.
+      x-required-permission: medicines:read
+      x-patient-scope: patient_id
+      x-audit: medicines.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Medicines.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Medicine'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Medicines]
+      summary: Create a medicine and optional schedule.
+      x-required-permission: medicines:write
+      x-patient-scope: patient_id
+      x-audit: medicine.created
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MedicineCreateRequest'
+      responses:
+        '201':
+          description: Medicine.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Medicine'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/medicine-schedule:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Medicines]
+      summary: Get active medicine schedules.
+      x-required-permission: medicines:read
+      x-patient-scope: patient_id
+      x-audit: medicine_schedule.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Schedule.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MedicineSchedule'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Medicines]
+      summary: Create or approve a medicine schedule.
+      x-required-permission: medicines:write
+      x-patient-scope: patient_id
+      x-audit: medicine_schedule.upserted
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MedicineScheduleUpsertRequest'
+      responses:
+        '201':
+          description: Schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicineSchedule'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/dose-events:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    post:
+      tags: [Medicines]
+      summary: Record a dose event.
+      x-required-permission: medicines:write
+      x-patient-scope: patient_id
+      x-audit: medicine_dose.recorded
+      x-phi: true
+      x-idempotent: recommended
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoseEventCreateRequest'
+      responses:
+        '201':
+          description: Dose event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicineDoseEvent'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/risk-events:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    post:
+      tags: [Risk]
+      summary: Create a rule-generated risk event.
+      x-required-permission: risk:write
+      x-patient-scope: patient_id
+      x-audit: risk_event.created
+      x-idempotent: required
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RiskEventCreateRequest'
+      responses:
+        '201':
+          description: Risk event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskEvent'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/alerts:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Risk]
+      summary: List patient alerts.
+      x-required-permission: alerts:read
+      x-patient-scope: patient_id
+      x-audit: alerts.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Alerts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alert'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /risk-events/{risk_event_id}/acknowledge:
+    parameters:
+      - $ref: '#/components/parameters/RiskEventId'
+    post:
+      tags: [Risk]
+      summary: Acknowledge a risk event and related alerts.
+      x-required-permission: alerts:write
+      x-patient-scope: risk_event.patient_id
+      x-audit: risk_event.acknowledged
+      x-phi: true
+      x-idempotent: recommended
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeRequest'
+      responses:
+        '200':
+          description: Risk event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskEvent'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /risk-events/{risk_event_id}/escalate:
+    parameters:
+      - $ref: '#/components/parameters/RiskEventId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Escalation]
+      summary: Start or return an existing escalation run for a risk event.
+      x-required-permission: escalation:write
+      x-patient-scope: risk_event.patient_id
+      x-audit: escalation.started
+      x-idempotent: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EscalationStartRequest'
+      responses:
+        '200':
+          description: Existing idempotent run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalationRun'
+        '201':
+          description: Created run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalationRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/escalation-policies:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Escalation]
+      summary: List escalation policies.
+      x-required-permission: escalation:read
+      x-patient-scope: patient_id
+      x-audit: escalation_policies.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Policies.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EscalationPolicy'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Escalation]
+      summary: Create escalation policy and ordered action steps.
+      x-required-permission: escalation:write
+      x-patient-scope: patient_id
+      x-audit: escalation_policy.created
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EscalationPolicyCreateRequest'
+      responses:
+        '201':
+          description: Policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalationPolicy'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /escalation-runs/{escalation_run_id}:
+    parameters:
+      - $ref: '#/components/parameters/EscalationRunId'
+    get:
+      tags: [Escalation]
+      summary: Get an escalation run timeline.
+      x-required-permission: escalation:read
+      x-patient-scope: escalation_run.patient_id
+      x-audit: escalation_run.viewed
+      x-phi: true
+      responses:
+        '200':
+          description: Run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalationRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /agent/messages:
+    post:
+      tags: [Agent]
+      summary: Send a message to the CareAgent runtime.
+      x-required-permission: agent:write
+      x-patient-scope: request.patient_id
+      x-audit: agent.message_received
+      x-phi: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentMessageRequest'
+      responses:
+        '200':
+          description: Agent response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMessageResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /agent/tools/{tool_name}:
+    parameters:
+      - name: tool_name
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/AgentToolName'
+    post:
+      tags: [Agent]
+      summary: Execute an approved agent tool through policy middleware.
+      x-required-permission: agent:tool_call
+      x-patient-scope: request.patient_id
+      x-audit: agent.tool_called
+      x-phi: maybe
+      x-idempotent: recommended
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentToolRequest'
+      responses:
+        '200':
+          description: Tool result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /webhooks/whatsapp:
+    post:
+      tags: [Webhooks]
+      summary: Receive WhatsApp Cloud API events.
+      security: []
+      x-webhook-signature-required: true
+      x-audit: webhook.whatsapp_received
+      parameters:
+        - $ref: '#/components/parameters/WebhookSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Accepted.
+        default:
+          $ref: '#/components/responses/Error'
+
+  /webhooks/telegram:
+    post:
+      tags: [Webhooks]
+      summary: Receive Telegram Bot API updates.
+      security: []
+      x-webhook-signature-required: true
+      x-audit: webhook.telegram_received
+      parameters:
+        - $ref: '#/components/parameters/WebhookSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Accepted.
+        default:
+          $ref: '#/components/responses/Error'
+
+  /webhooks/voice:
+    post:
+      tags: [Webhooks]
+      summary: Receive voice provider status, DTMF, and callback events.
+      security: []
+      x-webhook-signature-required: true
+      x-audit: webhook.voice_received
+      parameters:
+        - $ref: '#/components/parameters/WebhookSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Accepted.
+        default:
+          $ref: '#/components/responses/Error'
+
+  /patients/{patient_id}/audit-logs:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Audit]
+      summary: Patient-scoped audit trail.
+      x-required-permission: audit:read
+      x-patient-scope: patient_id
+      x-audit: audit_logs.viewed
+      responses:
+        '200':
+          description: Audit logs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PatientId:
+      name: patient_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConsentId:
+      name: consent_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RiskEventId:
+      name: risk_event_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EscalationRunId:
+      name: escalation_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 12
+        maxLength: 200
+    WebhookSignature:
+      name: X-CareAgent-Signature
+      in: header
+      required: true
+      schema:
+        type: string
+
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    AuthSessionRequest:
+      type: object
+      required: [provider, provider_token]
+      properties:
+        provider:
+          type: string
+          enum: [firebase, auth0, cognito, internal_test]
+        provider_token:
+          type: string
+        device:
+          type: object
+          additionalProperties: true
+    AuthSessionResponse:
+      type: object
+      required: [access_token, token_type, expires_in, user]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+        user:
+          $ref: '#/components/schemas/UserAccount'
+    UserAccount:
+      type: object
+      required: [id, role, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        display_name:
+          type: string
+        role:
+          $ref: '#/components/schemas/AppRole'
+        status:
+          type: string
+          enum: [pending, active, disabled, deleted]
+    MeResponse:
+      type: object
+      required: [user, patient_access]
+      properties:
+        user:
+          $ref: '#/components/schemas/UserAccount'
+        patient_profile_id:
+          type: string
+          format: uuid
+        patient_access:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatientAccessGrant'
+    AppRole:
+      type: string
+      enum: [patient, caretaker, doctor, nurse, admin]
+    PatientCreateRequest:
+      type: object
+      required: [full_name]
+      properties:
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        sex:
+          type: string
+        primary_language:
+          type: string
+          default: en
+        address:
+          type: object
+          additionalProperties: true
+        emergency_location_notes:
+          type: string
+        conditions:
+          type: array
+          items:
+            type: string
+        allergies:
+          type: array
+          items:
+            type: string
+        baseline_notes:
+          type: string
+    PatientUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        sex:
+          type: string
+        primary_language:
+          type: string
+        address:
+          type: object
+          additionalProperties: true
+        emergency_location_notes:
+          type: string
+        conditions:
+          type: array
+          items:
+            type: string
+        allergies:
+          type: array
+          items:
+            type: string
+        baseline_notes:
+          type: string
+    PatientProfile:
+      allOf:
+        - $ref: '#/components/schemas/PatientCreateRequest'
+        - type: object
+          required: [id, account_id, created_at, updated_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            account_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+    PatientSummary:
+      type: object
+      required: [id, full_name, risk_status, device_freshness]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        risk_status:
+          $ref: '#/components/schemas/RiskSeverity'
+        latest_key_vitals:
+          type: array
+          items:
+            $ref: '#/components/schemas/VitalReading'
+        device_freshness:
+          type: string
+          enum: [fresh, stale, disconnected, unknown]
+        open_alert_count:
+          type: integer
+    CareTeamMemberCreateRequest:
+      type: object
+      required: [role, priority_order, permissions]
+      properties:
+        user_account_id:
+          type: string
+          format: uuid
+        contact:
+          $ref: '#/components/schemas/ContactEndpointInput'
+        role:
+          type: string
+          enum: [family, caretaker, nurse, doctor, ambulance, hospital, other]
+        priority_order:
+          type: integer
+        permissions:
+          type: array
+          items:
+            type: string
+            examples: [patient:read, observations:read, alerts:write]
+    CareTeamMember:
+      allOf:
+        - $ref: '#/components/schemas/CareTeamMemberCreateRequest'
+        - type: object
+          required: [id, patient_id, active, created_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            active:
+              type: boolean
+            created_at:
+              type: string
+              format: date-time
+    ContactEndpointInput:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+        relationship:
+          type: string
+        phone:
+          type: string
+        whatsapp_id:
+          type: string
+        telegram_id:
+          type: string
+        email:
+          type: string
+          format: email
+        preferred_channel:
+          $ref: '#/components/schemas/ContactChannel'
+        quiet_hours:
+          type: object
+          additionalProperties: true
+    PatientAccessGrant:
+      type: object
+      required: [patient_id, grantee_user_account_id, role, permissions, status]
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+        grantee_user_account_id:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/AppRole'
+        permissions:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, revoked, expired]
+    ConsentGrantRequest:
+      type: object
+      required: [consent_type, scope, consent_text_version]
+      properties:
+        consent_type:
+          type: string
+          examples: [health_data, caretaker_access, messaging, calls, location_sharing, emergency_automation]
+        scope:
+          type: object
+          additionalProperties: true
+        channel:
+          $ref: '#/components/schemas/ContactChannel'
+        granted_to_user_id:
+          type: string
+          format: uuid
+        granted_to_contact_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        consent_text_version:
+          type: string
+    ConsentGrant:
+      allOf:
+        - $ref: '#/components/schemas/ConsentGrantRequest'
+        - type: object
+          required: [id, patient_id, subject_user_id, status, granted_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            subject_user_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [active, revoked, expired]
+            granted_at:
+              type: string
+              format: date-time
+            revoked_at:
+              type: string
+              format: date-time
+    RevokeConsentRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    DeviceCatalogEntry:
+      type: object
+      required: [id, brand, model, support_tier, supported_metrics]
+      properties:
+        id:
+          type: string
+          format: uuid
+        brand:
+          type: string
+        model:
+          type: string
+        category:
+          type: string
+        support_tier:
+          type: string
+        connection_methods:
+          type: array
+          items:
+            type: string
+        supported_metrics:
+          type: array
+          items:
+            type: string
+        validation_status:
+          type: string
+    DeviceCreateRequest:
+      type: object
+      required: [display_name, category, connection_method, supported_metrics]
+      properties:
+        catalog_device_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        category:
+          type: string
+        connection_method:
+          type: string
+        supported_metrics:
+          type: array
+          items:
+            type: string
+        reliability_tier:
+          $ref: '#/components/schemas/ReliabilityTier'
+    Device:
+      allOf:
+        - $ref: '#/components/schemas/DeviceCreateRequest'
+        - type: object
+          required: [id, patient_id, active, connections]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            active:
+              type: boolean
+            connections:
+              type: array
+              items:
+                $ref: '#/components/schemas/DeviceConnection'
+    DeviceConnection:
+      type: object
+      required: [id, platform, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        status:
+          type: string
+        last_sync_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        battery_level:
+          type: number
+    ObservationBatchCreateRequest:
+      type: object
+      required: [observations]
+      properties:
+        source_batch_id:
+          type: string
+        observations:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ObservationCreate'
+    ObservationCreate:
+      type: object
+      required: [metric_code, observed_at, source_type]
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        metric_code:
+          type: string
+        value_numeric:
+          type: number
+        value_text:
+          type: string
+        unit:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        source_type:
+          $ref: '#/components/schemas/SourceType'
+        reliability_tier:
+          $ref: '#/components/schemas/ReliabilityTier'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        raw_payload:
+          type: object
+          additionalProperties: true
+    ObservationBatchCreateResponse:
+      type: object
+      required: [accepted_count, event_id]
+      properties:
+        accepted_count:
+          type: integer
+        event_id:
+          type: string
+          format: uuid
+    ObservationListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Observation'
+    Observation:
+      allOf:
+        - $ref: '#/components/schemas/ObservationCreate'
+        - type: object
+          required: [id, patient_id, ingested_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            ingested_at:
+              type: string
+              format: date-time
+            abnormal_flag:
+              type: string
+            trend_flag:
+              type: string
+    LatestVitalsResponse:
+      type: object
+      required: [patient_id, readings]
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+        readings:
+          type: array
+          items:
+            $ref: '#/components/schemas/VitalReading'
+    VitalReading:
+      type: object
+      required: [metric_code, value, unit, observed_at, source, freshness]
+      properties:
+        metric_code:
+          type: string
+        value:
+          oneOf:
+            - type: number
+            - type: string
+            - type: boolean
+        unit:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        source:
+          type: string
+        freshness:
+          type: string
+          enum: [fresh, stale, old, unknown]
+    DocumentUploadInitRequest:
+      type: object
+      required: [original_filename, file_type, file_size_bytes, sha256]
+      properties:
+        original_filename:
+          type: string
+        file_type:
+          type: string
+        file_size_bytes:
+          type: integer
+        sha256:
+          type: string
+        upload_channel:
+          $ref: '#/components/schemas/ContactChannel'
+        document_type_hint:
+          type: string
+    DocumentUploadInitResponse:
+      type: object
+      required: [document, upload]
+      properties:
+        document:
+          $ref: '#/components/schemas/MedicalDocument'
+        upload:
+          type: object
+          required: [method, url, expires_at, headers]
+          properties:
+            method:
+              type: string
+              enum: [PUT, POST]
+            url:
+              type: string
+              format: uri
+            expires_at:
+              type: string
+              format: date-time
+            headers:
+              type: object
+              additionalProperties:
+                type: string
+    MedicalDocument:
+      type: object
+      required: [id, patient_id, original_filename, file_type, malware_scan_status, ocr_status, extraction_status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        original_filename:
+          type: string
+        file_type:
+          type: string
+        document_type:
+          type: string
+        malware_scan_status:
+          type: string
+          enum: [pending, clean, infected, failed, quarantined]
+        ocr_status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        extraction_status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        review_status:
+          type: string
+          enum: [pending, approved, corrected, rejected]
+        created_at:
+          type: string
+          format: date-time
+    DocumentDetailResponse:
+      type: object
+      required: [document, facts]
+      properties:
+        document:
+          $ref: '#/components/schemas/MedicalDocument'
+        facts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractedMedicalFact'
+    DocumentProcessingStatus:
+      type: object
+      required: [document_id, malware_scan_status, ocr_status, extraction_status, runs]
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        malware_scan_status:
+          type: string
+          enum: [pending, clean, infected, failed, quarantined]
+        ocr_status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        extraction_status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        blocked_reason:
+          type: string
+        runs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ExtractedMedicalFact:
+      type: object
+      required: [id, fact_type, label, value, confidence, review_status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fact_type:
+          type: string
+        label:
+          type: string
+        value:
+          type: string
+        unit:
+          type: string
+        effective_date:
+          type: string
+          format: date
+        confidence:
+          type: number
+        source_page:
+          type: integer
+        source_text_span:
+          type: object
+          additionalProperties: true
+        review_status:
+          type: string
+          enum: [pending, approved, corrected, rejected]
+        corrected_value:
+          type: string
+    DocumentReviewRequest:
+      type: object
+      required: [facts]
+      properties:
+        facts:
+          type: array
+          items:
+            type: object
+            required: [fact_id, review_status]
+            properties:
+              fact_id:
+                type: string
+                format: uuid
+              review_status:
+                type: string
+                enum: [approved, corrected, rejected]
+              corrected_value:
+                type: string
+    PatientQuestionRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+        allowed_document_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    PatientQuestionResponse:
+      type: object
+      required: [answer, citations, audit_log_id]
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            type: object
+            required: [document_id, fact_id]
+            properties:
+              document_id:
+                type: string
+                format: uuid
+              fact_id:
+                type: string
+                format: uuid
+              source_page:
+                type: integer
+        audit_log_id:
+          type: string
+          format: uuid
+    MedicineCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        normalized_name:
+          type: string
+        strength:
+          type: string
+        form:
+          type: string
+        instructions:
+          type: string
+        source_document_id:
+          type: string
+          format: uuid
+    Medicine:
+      allOf:
+        - $ref: '#/components/schemas/MedicineCreateRequest'
+        - type: object
+          required: [id, patient_id, active]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            active:
+              type: boolean
+    MedicineScheduleUpsertRequest:
+      type: object
+      required: [medicine_id, dose, scheduled_times, start_date]
+      properties:
+        medicine_id:
+          type: string
+          format: uuid
+        dose:
+          type: string
+        route:
+          type: string
+        scheduled_times:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [local_time]
+            properties:
+              local_time:
+                type: string
+                examples: ['08:00']
+              days_of_week:
+                type: array
+                items:
+                  type: integer
+                  minimum: 0
+                  maximum: 6
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        with_food:
+          type: string
+        special_instructions:
+          type: string
+        review_status:
+          type: string
+          enum: [pending, approved]
+    MedicineSchedule:
+      allOf:
+        - $ref: '#/components/schemas/MedicineScheduleUpsertRequest'
+        - type: object
+          required: [id, patient_id]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            medicine:
+              $ref: '#/components/schemas/Medicine'
+    DoseEventCreateRequest:
+      type: object
+      required: [schedule_id, scheduled_at, status]
+      properties:
+        schedule_id:
+          type: string
+          format: uuid
+        scheduled_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [taken, skipped, missed, snoozed]
+        source_channel:
+          $ref: '#/components/schemas/ContactChannel'
+        notes:
+          type: string
+        idempotency_key:
+          type: string
+    MedicineDoseEvent:
+      allOf:
+        - $ref: '#/components/schemas/DoseEventCreateRequest'
+        - type: object
+          required: [id, patient_id, recorded_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            recorded_at:
+              type: string
+              format: date-time
+    RiskEventCreateRequest:
+      type: object
+      required: [severity, confidence, reason, evidence]
+      properties:
+        severity:
+          $ref: '#/components/schemas/RiskSeverity'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reason:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: object
+            required: [metric, value, observed_at, source]
+            additionalProperties: true
+        rule_id:
+          type: string
+          format: uuid
+        recommended_action:
+          type: string
+    RiskEvent:
+      allOf:
+        - $ref: '#/components/schemas/RiskEventCreateRequest'
+        - type: object
+          required: [id, patient_id, status, detected_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [open, acknowledged, escalating, resolved, false_positive, cancelled]
+            detected_at:
+              type: string
+              format: date-time
+            acknowledged_at:
+              type: string
+              format: date-time
+            resolved_at:
+              type: string
+              format: date-time
+    Alert:
+      type: object
+      required: [id, patient_id, severity, title, body, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        risk_event_id:
+          type: string
+          format: uuid
+        severity:
+          $ref: '#/components/schemas/RiskSeverity'
+        title:
+          type: string
+        body:
+          type: string
+        status:
+          type: string
+          enum: [open, acknowledged, resolved, suppressed, expired]
+        created_at:
+          type: string
+          format: date-time
+    AcknowledgeRequest:
+      type: object
+      properties:
+        note:
+          type: string
+        classification:
+          type: string
+          enum: [true_positive, false_positive, unknown]
+    EscalationStartRequest:
+      type: object
+      required: [policy_id, requested_by]
+      properties:
+        policy_id:
+          type: string
+          format: uuid
+        requested_by:
+          type: string
+          enum: [policy_engine, patient, caretaker, doctor, nurse, admin, agent]
+        simulation_mode:
+          type: boolean
+        reason:
+          type: string
+    EscalationPolicyCreateRequest:
+      type: object
+      required: [name, severity_trigger, steps]
+      properties:
+        name:
+          type: string
+        severity_trigger:
+          $ref: '#/components/schemas/RiskSeverity'
+        patient_confirmation_timeout_seconds:
+          type: integer
+          default: 120
+        emergency_enabled:
+          type: boolean
+          default: false
+        location_sharing_enabled:
+          type: boolean
+          default: false
+        simulation_mode:
+          type: boolean
+          default: true
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/EscalationPolicyStep'
+    EscalationPolicy:
+      allOf:
+        - $ref: '#/components/schemas/EscalationPolicyCreateRequest'
+        - type: object
+          required: [id, patient_id, active]
+          properties:
+            id:
+              type: string
+              format: uuid
+            patient_id:
+              type: string
+              format: uuid
+            active:
+              type: boolean
+    EscalationPolicyStep:
+      type: object
+      required: [step_order, action_type, channel]
+      properties:
+        step_order:
+          type: integer
+        action_type:
+          type: string
+          enum: [patient_prompt, send_message, place_call, share_location, wait_for_ack, create_incident_summary]
+        target_contact_id:
+          type: string
+          format: uuid
+        target_role:
+          type: string
+          enum: [family, caretaker, nurse, doctor, ambulance, hospital, other]
+        channel:
+          $ref: '#/components/schemas/ContactChannel'
+        template_id:
+          type: string
+        timeout_seconds:
+          type: integer
+        retry_count:
+          type: integer
+        include_location:
+          type: boolean
+    EscalationRun:
+      type: object
+      required: [id, risk_event_id, patient_id, policy_id, status, actions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        risk_event_id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        policy_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, awaiting_ack, acknowledged, completed, failed, cancelled]
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/EscalationAction'
+    EscalationAction:
+      type: object
+      required: [id, step_order, attempt_number, action_type, channel, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        step_order:
+          type: integer
+        attempt_number:
+          type: integer
+        action_type:
+          type: string
+        target_contact_id:
+          type: string
+          format: uuid
+        channel:
+          $ref: '#/components/schemas/ContactChannel'
+        status:
+          type: string
+          enum: [pending, attempting, sent, delivered, answered, acknowledged, failed, skipped, cancelled]
+        attempted_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        provider_message_id:
+          type: string
+        provider_call_id:
+          type: string
+        error_code:
+          type: string
+    AgentMessageRequest:
+      type: object
+      required: [patient_id, channel, message]
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        channel:
+          $ref: '#/components/schemas/ContactChannel'
+        message:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    AgentMessageResponse:
+      type: object
+      required: [conversation_id, message_id, response, audit_log_id]
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        message_id:
+          type: string
+          format: uuid
+        response:
+          type: string
+        citations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        audit_log_id:
+          type: string
+          format: uuid
+    AgentToolName:
+      type: string
+      enum:
+        - get_patient_profile
+        - get_recent_vitals
+        - get_device_status
+        - get_medicine_schedule
+        - log_medicine_taken
+        - search_medical_documents
+        - create_alert
+        - request_patient_confirmation
+        - send_channel_message
+        - place_voice_call
+        - start_escalation_protocol
+        - book_appointment_request
+    AgentToolRequest:
+      type: object
+      required: [patient_id, request_id, authorization_scope, reason, input]
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+        authorization_scope:
+          type: string
+        reason:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+    AgentToolResponse:
+      type: object
+      required: [status, result, audit_log_id]
+      properties:
+        status:
+          type: string
+          enum: [ok, denied, error]
+        result:
+          type: object
+          additionalProperties: true
+        audit_log_id:
+          type: string
+          format: uuid
+        safe_user_message:
+          type: string
+        error_code:
+          type: string
+    AuditLog:
+      type: object
+      required: [id, actor_type, action, resource_type, outcome, phi_access, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_type:
+          type: string
+          enum: [user, system, agent, provider_webhook, background_worker]
+        actor_id:
+          type: string
+        patient_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        outcome:
+          type: string
+          enum: [success, denied, error]
+        phi_access:
+          type: boolean
+        reason:
+          type: string
+        request_id:
+          type: string
+        metadata_json:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ContactChannel:
+      type: string
+      enum: [push, in_app, whatsapp, telegram, sms, voice, email]
+    SourceType:
+      type: string
+      enum: [healthkit, health_connect, ble, vendor_api, fhir, ocr, manual, simulator]
+    ReliabilityTier:
+      type: string
+      enum: [clinical, os_aggregator, standard_ble, vendor_api, manual_or_ocr, unknown]
+    ProcessingStatus:
+      type: string
+      enum: [queued, running, blocked, completed, failed, cancelled]
+    RiskSeverity:
+      type: string
+      enum: [informational, low, moderate, high, critical]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+            details:
+              type: object
+              additionalProperties: true

@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "provider_mode": "mock_simulator",
+  "cases": [
+    {
+      "key": "critical_hr_primary_ack",
+      "risk_event": {
+        "severity": "critical",
+        "reason": "Heart rate dropped to 38 bpm within 40 seconds",
+        "evidence": [
+          {
+            "metric": "heart_rate",
+            "value": 38,
+            "unit": "bpm",
+            "source": "simulated_watch",
+            "observed_at": "2026-05-06T18:12:40+05:30"
+          }
+        ]
+      },
+      "provider_behaviors": [
+        { "step_order": 1, "channel": "push", "behavior": "deliver", "delay_seconds": 1 },
+        { "step_order": 2, "channel": "whatsapp", "behavior": "deliver", "delay_seconds": 2 },
+        { "step_order": 3, "channel": "voice", "behavior": "acknowledge", "delay_seconds": 10 }
+      ],
+      "expected": {
+        "run_status": "acknowledged",
+        "called_public_emergency_number": false,
+        "max_voice_attempts_per_contact": 1
+      }
+    },
+    {
+      "key": "critical_hr_no_ack_fallback",
+      "risk_event": {
+        "severity": "critical",
+        "reason": "Heart rate dropped to 38 bpm and patient did not respond",
+        "evidence": [
+          {
+            "metric": "heart_rate",
+            "value": 38,
+            "unit": "bpm",
+            "source": "simulated_watch",
+            "observed_at": "2026-05-06T18:12:40+05:30"
+          }
+        ]
+      },
+      "provider_behaviors": [
+        { "step_order": 1, "channel": "push", "behavior": "deliver", "delay_seconds": 1 },
+        { "step_order": 2, "channel": "voice", "behavior": "timeout", "delay_seconds": 30 },
+        { "step_order": 3, "channel": "voice", "behavior": "timeout", "delay_seconds": 30 },
+        { "step_order": 4, "channel": "voice", "behavior": "acknowledge", "delay_seconds": 8 }
+      ],
+      "expected": {
+        "run_status": "acknowledged",
+        "fallback_reached_step_order": 4,
+        "called_public_emergency_number": false
+      }
+    },
+    {
+      "key": "duplicate_critical_event",
+      "risk_event": {
+        "severity": "critical",
+        "reason": "Duplicate critical event idempotency check",
+        "idempotency_key": "risk_evt_demo_critical_v1"
+      },
+      "repeat_start_requests": 2,
+      "expected": {
+        "unique_escalation_runs": 1,
+        "duplicate_dispatch_attempts": 0
+      }
+    },
+    {
+      "key": "revoked_voice_consent",
+      "risk_event": {
+        "severity": "critical",
+        "reason": "Critical oxygen saturation reading with voice consent revoked",
+        "evidence": [
+          {
+            "metric": "spo2",
+            "value": 82,
+            "unit": "%",
+            "source": "simulated_pulse_oximeter",
+            "observed_at": "2026-05-06T18:20:00+05:30"
+          }
+        ]
+      },
+      "consent_overrides": {
+        "voice_calls": "revoked"
+      },
+      "expected": {
+        "voice_actions_status": "skipped",
+        "non_voice_fallback_continues": true
+      }
+    },
+    {
+      "key": "unverified_telegram_ack",
+      "risk_event": {
+        "severity": "high",
+        "reason": "High blood pressure alert awaiting caretaker acknowledgement"
+      },
+      "channel_link_overrides": {
+        "telegram": "unverified"
+      },
+      "provider_behaviors": [
+        { "step_order": 1, "channel": "telegram", "behavior": "acknowledge", "delay_seconds": 3 }
+      ],
+      "expected": {
+        "telegram_acknowledgement_accepted": false,
+        "run_status_after_invalid_ack": "awaiting_ack"
+      }
+    },
+    {
+      "key": "whatsapp_template_not_approved",
+      "risk_event": {
+        "severity": "high",
+        "reason": "Urgent vitals alert with WhatsApp template still pending"
+      },
+      "template_overrides": {
+        "urgent_vitals_alert_v1": "pending_approval"
+      },
+      "expected": {
+        "whatsapp_dispatch_status": "policy_denied",
+        "fallback_selected": true
+      }
+    },
+    {
+      "key": "patient_cancels_after_push",
+      "risk_event": {
+        "severity": "high",
+        "reason": "Patient reports false alarm after recheck"
+      },
+      "provider_behaviors": [
+        { "step_order": 1, "channel": "push", "behavior": "deliver", "delay_seconds": 1 }
+      ],
+      "patient_action": {
+        "type": "cancel",
+        "delay_seconds": 15,
+        "reason": "false_alarm_after_recheck"
+      },
+      "expected": {
+        "run_status": "cancelled",
+        "later_actions_status": "cancelled"
+      }
+    },
+    {
+      "key": "location_consent_absent",
+      "risk_event": {
+        "severity": "critical",
+        "reason": "Critical fall event with no location consent",
+        "evidence": [
+          {
+            "metric": "fall_detected",
+            "value": true,
+            "source": "simulated_watch",
+            "observed_at": "2026-05-06T18:25:00+05:30"
+          }
+        ]
+      },
+      "consent_overrides": {
+        "location_sharing": "revoked"
+      },
+      "expected": {
+        "location_included": false,
+        "dispatch_continues_without_location": true
+      }
+    },
+    {
+      "key": "simulation_emergency_contact_block",
+      "risk_event": {
+        "severity": "critical",
+        "reason": "Emergency simulation must not call real emergency services"
+      },
+      "policy_overrides": {
+        "public_emergency_number_enabled": true,
+        "simulation_mode": true
+      },
+      "expected": {
+        "production_provider_invocations": 0,
+        "simulated_emergency_call_created": true
+      }
+    }
+  ]
+}

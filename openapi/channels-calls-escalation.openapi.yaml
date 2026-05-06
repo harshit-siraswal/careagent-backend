@@ -1,0 +1,583 @@
+openapi: 3.1.0
+info:
+  title: CareAgent Channels, Calls, and Escalation API
+  version: 0.1.0
+  summary: Contracts for verified channels, delivery dispatch, provider webhooks, escalation runs, and emergency simulations.
+servers:
+  - url: https://api.careagent.example
+security:
+  - bearerAuth: []
+paths:
+  /patients/{patient_id}/channel-links:
+    get:
+      operationId: listChannelLinks
+      summary: List verified and pending channel links for a patient.
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+      responses:
+        "200":
+          description: Channel links.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [links]
+                properties:
+                  links:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChannelLink"
+    post:
+      operationId: createChannelLink
+      summary: Start account/contact verification for WhatsApp, Telegram, push, SMS, voice, or email.
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelLinkRequest"
+      responses:
+        "202":
+          description: Verification challenge created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelLink"
+  /patients/{patient_id}/channel-links/{link_id}/verify:
+    post:
+      operationId: verifyChannelLink
+      summary: Complete a channel verification challenge.
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+        - $ref: "#/components/parameters/LinkId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verification_code]
+              properties:
+                verification_code:
+                  type: string
+                  minLength: 4
+                  maxLength: 12
+      responses:
+        "200":
+          description: Verified link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelLink"
+  /patients/{patient_id}/channel-messages:
+    post:
+      operationId: sendChannelMessage
+      summary: Dispatch a policy-approved message or call through a provider abstraction.
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchRequest"
+      responses:
+        "202":
+          description: Dispatch attempt accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchAttempt"
+        "403":
+          description: Policy denied the external action.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /risk-events/{risk_event_id}/escalate:
+    post:
+      operationId: startEscalation
+      summary: Start or retrieve an idempotent escalation run for a risk event.
+      parameters:
+        - $ref: "#/components/parameters/RiskEventId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartEscalationRequest"
+      responses:
+        "202":
+          description: Escalation run started or already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscalationRun"
+  /escalation-runs/{run_id}:
+    get:
+      operationId: getEscalationRun
+      summary: Get escalation run status, actions, receipts, and acknowledgements.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Escalation run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscalationRun"
+  /escalation-runs/{run_id}/acknowledge:
+    post:
+      operationId: acknowledgeEscalationRun
+      summary: Acknowledge an escalation through app, dashboard, Telegram, WhatsApp, or voice callback.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcknowledgementRequest"
+      responses:
+        "200":
+          description: Acknowledgement recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Acknowledgement"
+  /patients/{patient_id}/emergency-simulations:
+    post:
+      operationId: startEmergencySimulation
+      summary: Run a full escalation drill through simulator providers only.
+      parameters:
+        - $ref: "#/components/parameters/PatientId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSimulationRequest"
+      responses:
+        "202":
+          description: Simulation queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencySimulation"
+  /emergency-simulations/{simulation_id}:
+    get:
+      operationId: getEmergencySimulation
+      summary: Get emergency drill status and expected-vs-actual steps.
+      parameters:
+        - name: simulation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Simulation status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencySimulation"
+  /webhooks/whatsapp:
+    post:
+      operationId: whatsappWebhook
+      summary: Receive WhatsApp Cloud API or BSP inbound messages and delivery receipts.
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204":
+          description: Accepted.
+  /webhooks/telegram:
+    post:
+      operationId: telegramWebhook
+      summary: Receive Telegram Bot API updates.
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204":
+          description: Accepted.
+  /webhooks/voice:
+    post:
+      operationId: voiceWebhook
+      summary: Receive programmable voice status, DTMF, and speech callbacks.
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204":
+          description: Accepted.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-CareAgent-Signature
+  parameters:
+    PatientId:
+      name: patient_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LinkId:
+      name: link_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RiskEventId:
+      name: risk_event_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
+  schemas:
+    Channel:
+      type: string
+      enum: [push, in_app, whatsapp, telegram, sms, voice, email]
+    VerificationStatus:
+      type: string
+      enum: [unverified, pending, verified, failed]
+    ChannelLink:
+      type: object
+      required: [id, patient_id, channel, external_subject_ref, verification_status, commands_enabled, uploads_enabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        contact_id:
+          type: string
+          format: uuid
+        user_account_id:
+          type: string
+          format: uuid
+        channel:
+          $ref: "#/components/schemas/Channel"
+        external_subject_ref:
+          type: string
+        verification_status:
+          $ref: "#/components/schemas/VerificationStatus"
+        commands_enabled:
+          type: boolean
+        uploads_enabled:
+          type: boolean
+        verified_at:
+          type: string
+          format: date-time
+    CreateChannelLinkRequest:
+      type: object
+      required: [channel, external_subject_ref, verification_method]
+      properties:
+        channel:
+          $ref: "#/components/schemas/Channel"
+        contact_id:
+          type: string
+          format: uuid
+        user_account_id:
+          type: string
+          format: uuid
+        external_subject_ref:
+          type: string
+        verification_method:
+          type: string
+          enum: [otp, app_deep_link, signed_link, provider_token]
+        requested_capabilities:
+          type: array
+          items:
+            type: string
+            enum: [chat, uploads, reminders, alerts, calls, acknowledgements]
+    DispatchRequest:
+      type: object
+      required: [channel, variables, reason, policy_decision_id]
+      properties:
+        channel:
+          $ref: "#/components/schemas/Channel"
+        contact_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        escalation_run_id:
+          type: string
+          format: uuid
+        escalation_action_id:
+          type: string
+          format: uuid
+        template_id:
+          type: string
+        script_id:
+          type: string
+        locale:
+          type: string
+          default: en-IN
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+        media_refs:
+          type: array
+          items:
+            type: object
+            required: [type, ref]
+            properties:
+              type:
+                type: string
+                enum: [image, document, location]
+              ref:
+                type: string
+        reason:
+          type: string
+        policy_decision_id:
+          type: string
+        simulation:
+          type: boolean
+          default: false
+    DispatchAttempt:
+      type: object
+      required: [id, patient_id, channel, status, simulation]
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        channel:
+          $ref: "#/components/schemas/Channel"
+        status:
+          type: string
+          enum: [queued, policy_denied, provider_pending, sent, delivered, read, answered, acknowledged, failed, cancelled, expired, simulated]
+        provider_message_id:
+          type: string
+        provider_call_id:
+          type: string
+        next_attempt_at:
+          type: string
+          format: date-time
+        simulation:
+          type: boolean
+    StartEscalationRequest:
+      type: object
+      required: [requested_by, policy_id]
+      properties:
+        requested_by:
+          type: string
+          enum: [system, agent, background_worker, user]
+        policy_id:
+          type: string
+          format: uuid
+        simulation:
+          type: boolean
+          default: false
+        evidence_snapshot:
+          type: object
+          additionalProperties: true
+    EscalationRun:
+      type: object
+      required: [id, patient_id, risk_event_id, policy_id, status, actions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        risk_event_id:
+          type: string
+          format: uuid
+        policy_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, awaiting_ack, acknowledged, completed, failed, cancelled]
+        outcome:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/EscalationAction"
+        acknowledgements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Acknowledgement"
+    EscalationAction:
+      type: object
+      required: [id, step_order, action_type, channel, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        step_order:
+          type: integer
+        action_type:
+          type: string
+        channel:
+          $ref: "#/components/schemas/Channel"
+        template_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, attempting, sent, delivered, answered, acknowledged, failed, skipped, cancelled]
+        dispatch_attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchAttempt"
+    AcknowledgementRequest:
+      type: object
+      required: [acknowledgement_method]
+      properties:
+        escalation_action_id:
+          type: string
+          format: uuid
+        acknowledged_by_contact_id:
+          type: string
+          format: uuid
+        acknowledged_by_user_id:
+          type: string
+          format: uuid
+        channel:
+          $ref: "#/components/schemas/Channel"
+        acknowledgement_method:
+          type: string
+          enum: [app_button, dashboard_button, whatsapp_button, telegram_callback, voice_dtmf, voice_speech]
+        response_payload:
+          type: object
+          additionalProperties: true
+    Acknowledgement:
+      type: object
+      required: [id, escalation_run_id, acknowledgement_method, acknowledged_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        escalation_run_id:
+          type: string
+          format: uuid
+        escalation_action_id:
+          type: string
+          format: uuid
+        acknowledgement_method:
+          type: string
+        acknowledged_at:
+          type: string
+          format: date-time
+    StartSimulationRequest:
+      type: object
+      required: [scenario_key, escalation_policy_id]
+      properties:
+        scenario_key:
+          type: string
+        escalation_policy_id:
+          type: string
+          format: uuid
+        synthetic_risk_event:
+          type: object
+          additionalProperties: true
+        provider_behaviors:
+          type: array
+          items:
+            type: object
+            required: [channel, behavior]
+            properties:
+              channel:
+                $ref: "#/components/schemas/Channel"
+              behavior:
+                type: string
+                enum: [deliver, fail, timeout, answer, acknowledge]
+              delay_seconds:
+                type: integer
+                minimum: 0
+    EmergencySimulation:
+      type: object
+      required: [id, patient_id, scenario_key, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        scenario_key:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, passed, failed, cancelled]
+        expected_steps:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        actual_summary:
+          type: object
+          additionalProperties: true
+        blocked_reasons:
+          type: array
+          items:
+            type: string
+    ErrorResponse:
+      type: object
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+        audit_log_id:
+          type: string
+          format: uuid
