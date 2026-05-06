@@ -313,11 +313,96 @@ DROP TRIGGER IF EXISTS simulator_scenarios_set_updated_at ON simulator_scenarios
 CREATE TRIGGER simulator_scenarios_set_updated_at BEFORE UPDATE ON simulator_scenarios
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+COMMENT ON TABLE metric_catalog IS
+  'Non-PHI normalized metric catalogue. RLS permits read-only catalogue access.';
+COMMENT ON TABLE metric_normalization_rules IS
+  'Non-PHI normalization metadata. RLS permits read-only access to active rules.';
+COMMENT ON TABLE ble_profile_catalog IS
+  'Non-PHI BLE parser catalogue. RLS permits read-only catalogue access.';
+COMMENT ON TABLE connector_definitions IS
+  'Non-PHI connector catalogue. RLS permits read-only access to active connectors.';
+COMMENT ON TABLE patient_connector_accounts IS
+  'PHI-bearing patient connector account state. Tokens must be stored out of row data behind token_vault_ref.';
+COMMENT ON TABLE connector_sync_runs IS
+  'PHI-bearing connector sync history and error state.';
+COMMENT ON TABLE device_support_requests IS
+  'Potentially PHI-bearing support requests for device compatibility.';
+COMMENT ON TABLE observation_quality_assessments IS
+  'PHI-bearing quality scores linked to patient observations.';
+COMMENT ON TABLE observation_normalization_errors IS
+  'Potentially PHI-bearing ingestion errors. payload_excerpt must remain redacted.';
+
+ALTER TABLE metric_catalog ENABLE ROW LEVEL SECURITY;
+ALTER TABLE metric_normalization_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ble_profile_catalog ENABLE ROW LEVEL SECURITY;
+ALTER TABLE connector_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE patient_connector_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE connector_sync_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_catalog_metric_support ENABLE ROW LEVEL SECURITY;
 ALTER TABLE device_support_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observation_quality_assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observation_normalization_errors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE simulator_scenarios ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS metric_catalog_read_scope ON metric_catalog;
+CREATE POLICY metric_catalog_read_scope ON metric_catalog
+  FOR SELECT
+  USING (active = true OR app_is_admin());
+
+DROP POLICY IF EXISTS metric_catalog_admin_write_scope ON metric_catalog;
+CREATE POLICY metric_catalog_admin_write_scope ON metric_catalog
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
+
+DROP POLICY IF EXISTS metric_normalization_rules_read_scope ON metric_normalization_rules;
+CREATE POLICY metric_normalization_rules_read_scope ON metric_normalization_rules
+  FOR SELECT
+  USING (active = true OR app_is_admin());
+
+DROP POLICY IF EXISTS metric_normalization_rules_admin_write_scope ON metric_normalization_rules;
+CREATE POLICY metric_normalization_rules_admin_write_scope ON metric_normalization_rules
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
+
+DROP POLICY IF EXISTS ble_profile_catalog_read_scope ON ble_profile_catalog;
+CREATE POLICY ble_profile_catalog_read_scope ON ble_profile_catalog
+  FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS ble_profile_catalog_admin_write_scope ON ble_profile_catalog;
+CREATE POLICY ble_profile_catalog_admin_write_scope ON ble_profile_catalog
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
+
+DROP POLICY IF EXISTS connector_definitions_read_scope ON connector_definitions;
+CREATE POLICY connector_definitions_read_scope ON connector_definitions
+  FOR SELECT
+  USING (active = true OR app_is_admin());
+
+DROP POLICY IF EXISTS connector_definitions_admin_write_scope ON connector_definitions;
+CREATE POLICY connector_definitions_admin_write_scope ON connector_definitions
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
+
+DROP POLICY IF EXISTS device_catalog_metric_support_read_scope ON device_catalog_metric_support;
+CREATE POLICY device_catalog_metric_support_read_scope ON device_catalog_metric_support
+  FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS device_catalog_metric_support_admin_write_scope ON device_catalog_metric_support;
+CREATE POLICY device_catalog_metric_support_admin_write_scope ON device_catalog_metric_support
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
+
+DROP POLICY IF EXISTS simulator_scenarios_read_scope ON simulator_scenarios;
+CREATE POLICY simulator_scenarios_read_scope ON simulator_scenarios
+  FOR SELECT
+  USING (active = true OR app_is_admin());
+
+DROP POLICY IF EXISTS simulator_scenarios_admin_write_scope ON simulator_scenarios;
+CREATE POLICY simulator_scenarios_admin_write_scope ON simulator_scenarios
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
 
 DROP POLICY IF EXISTS patient_connector_accounts_scope ON patient_connector_accounts;
 CREATE POLICY patient_connector_accounts_scope ON patient_connector_accounts

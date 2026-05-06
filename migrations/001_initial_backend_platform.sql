@@ -837,21 +837,46 @@ $$;
 CREATE TRIGGER audit_logs_no_update BEFORE UPDATE OR DELETE ON audit_logs
   FOR EACH ROW EXECUTE FUNCTION protect_audit_log_immutability();
 
+COMMENT ON FUNCTION app_can_access_patient(uuid, text) IS
+  'Patient-scope helper for RLS policies. SECURITY DEFINER is limited to authorization lookup tables and uses a fixed public search_path.';
+COMMENT ON TABLE user_accounts IS
+  'PII-bearing account table. RLS allows self access and admin support access only.';
+COMMENT ON TABLE auth_identities IS
+  'Authentication identity mapping. Treat provider claims as sensitive; do not use user-editable metadata for authorization.';
+COMMENT ON TABLE contact_endpoints IS
+  'PHI/PII-bearing contact endpoints for care-team and escalation workflows.';
+COMMENT ON TABLE audit_logs IS
+  'Append-only PHI audit trail. RLS permits scoped audit reads and controlled inserts; updates and deletes are blocked by trigger.';
+COMMENT ON TABLE idempotency_keys IS
+  'May contain PHI-derived response bodies for replay. RLS is patient scoped.';
+COMMENT ON TABLE outbox_events IS
+  'Internal worker queue payloads may contain PHI references. RLS restricts patient scoped reads and writes.';
+COMMENT ON TABLE device_catalog IS
+  'Non-PHI device compatibility catalogue. RLS permits read-only catalogue access.';
+COMMENT ON TABLE risk_rules IS
+  'Non-PHI deterministic risk rule registry. RLS permits read-only access to active rules; writes are admin scoped.';
+
+ALTER TABLE user_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_identities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE patient_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contact_endpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE care_team_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE patient_access_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consent_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consent_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE device_connections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observation_raw_payloads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE observations_default ENABLE ROW LEVEL SECURITY;
 ALTER TABLE medicines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE medicine_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE medicine_dose_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE medical_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_processing_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE extracted_medical_facts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE risk_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE escalation_policies ENABLE ROW LEVEL SECURITY;
@@ -861,10 +886,49 @@ ALTER TABLE escalation_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_tool_calls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE idempotency_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE outbox_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY user_accounts_self_or_admin_scope ON user_accounts
+  USING (app_current_role() = 'admin' OR id = app_current_user_id())
+  WITH CHECK (app_current_role() = 'admin' OR id = app_current_user_id());
+
+CREATE POLICY auth_identities_self_or_admin_scope ON auth_identities
+  USING (app_is_admin() OR user_account_id = app_current_user_id())
+  WITH CHECK (app_is_admin() OR user_account_id = app_current_user_id());
 
 CREATE POLICY patient_profiles_scope ON patient_profiles
   USING (app_is_admin() OR account_id = app_current_user_id() OR app_can_access_patient(id, 'patient:read'))
   WITH CHECK (app_is_admin() OR account_id = app_current_user_id());
+
+CREATE POLICY contact_endpoints_scope ON contact_endpoints
+  USING (
+    app_is_admin()
+    OR EXISTS (
+      SELECT 1
+      FROM care_team_members ctm
+      WHERE ctm.contact_id = id
+        AND ctm.active = true
+        AND app_can_access_patient(ctm.patient_id, 'care_team:read')
+    )
+    OR id IN (
+      SELECT pp.primary_doctor_contact_id
+      FROM patient_profiles pp
+      WHERE pp.primary_doctor_contact_id IS NOT NULL
+        AND app_can_access_patient(pp.id, 'patient:read')
+    )
+  )
+  WITH CHECK (
+    app_is_admin()
+    OR EXISTS (
+      SELECT 1
+      FROM care_team_members ctm
+      WHERE ctm.contact_id = id
+        AND ctm.active = true
+        AND app_can_access_patient(ctm.patient_id, 'care_team:write')
+    )
+  );
 
 CREATE POLICY care_team_members_scope ON care_team_members
   USING (app_can_access_patient(patient_id, 'care_team:read'))
@@ -881,6 +945,14 @@ CREATE POLICY consent_grants_scope ON consent_grants
 CREATE POLICY consent_ledger_scope ON consent_ledger
   USING (app_can_access_patient(patient_id, 'consent:read'))
   WITH CHECK (app_can_access_patient(patient_id, 'consent:write'));
+
+CREATE POLICY device_catalog_read_scope ON device_catalog
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY device_catalog_admin_write_scope ON device_catalog
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
 
 CREATE POLICY devices_scope ON devices
   USING (app_can_access_patient(patient_id, 'devices:read'))
@@ -910,6 +982,10 @@ CREATE POLICY observations_scope ON observations
   USING (app_can_access_patient(patient_id, 'observations:read'))
   WITH CHECK (app_can_access_patient(patient_id, 'observations:write'));
 
+CREATE POLICY observations_default_scope ON observations_default
+  USING (app_can_access_patient(patient_id, 'observations:read'))
+  WITH CHECK (app_can_access_patient(patient_id, 'observations:write'));
+
 CREATE POLICY medicines_scope ON medicines
   USING (app_can_access_patient(patient_id, 'medicines:read'))
   WITH CHECK (app_can_access_patient(patient_id, 'medicines:write'));
@@ -933,6 +1009,14 @@ CREATE POLICY document_processing_runs_scope ON document_processing_runs
 CREATE POLICY extracted_medical_facts_scope ON extracted_medical_facts
   USING (app_can_access_patient(patient_id, 'documents:read'))
   WITH CHECK (app_can_access_patient(patient_id, 'documents:write'));
+
+CREATE POLICY risk_rules_read_scope ON risk_rules
+  FOR SELECT
+  USING (active = true OR app_is_admin());
+
+CREATE POLICY risk_rules_admin_write_scope ON risk_rules
+  USING (app_is_admin())
+  WITH CHECK (app_is_admin());
 
 CREATE POLICY risk_events_scope ON risk_events
   USING (app_can_access_patient(patient_id, 'risk:read'))
@@ -993,5 +1077,41 @@ CREATE POLICY messages_scope ON messages
 CREATE POLICY agent_tool_calls_scope ON agent_tool_calls
   USING (app_can_access_patient(patient_id, 'agent:read'))
   WITH CHECK (app_can_access_patient(patient_id, 'agent:write'));
+
+CREATE POLICY idempotency_keys_scope ON idempotency_keys
+  USING (
+    app_is_admin()
+    OR (patient_id IS NOT NULL AND app_can_access_patient(patient_id, 'patient:read'))
+  )
+  WITH CHECK (
+    app_is_admin()
+    OR (patient_id IS NOT NULL AND app_can_access_patient(patient_id, 'patient:write'))
+  );
+
+CREATE POLICY outbox_events_scope ON outbox_events
+  USING (
+    app_is_admin()
+    OR (patient_id IS NOT NULL AND app_can_access_patient(patient_id, 'patient:read'))
+  )
+  WITH CHECK (
+    app_is_admin()
+    OR (patient_id IS NOT NULL AND app_can_access_patient(patient_id, 'patient:write'))
+  );
+
+CREATE POLICY audit_logs_read_scope ON audit_logs
+  FOR SELECT
+  USING (
+    app_is_admin()
+    OR actor_user_id = app_current_user_id()
+    OR (patient_id IS NOT NULL AND app_can_access_patient(patient_id, 'audit:read'))
+  );
+
+CREATE POLICY audit_logs_insert_scope ON audit_logs
+  FOR INSERT
+  WITH CHECK (
+    app_is_admin()
+    OR actor_user_id = app_current_user_id()
+    OR (patient_id IS NOT NULL AND app_can_access_patient(patient_id, 'patient:read'))
+  );
 
 COMMIT;
