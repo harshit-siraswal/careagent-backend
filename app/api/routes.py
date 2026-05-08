@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from app.core.audit import audit
 from app.core.security import Actor, current_actor, optional_actor, require_patient_scope, require_permission
@@ -59,10 +60,38 @@ from app.schemas import (
     VitalReading,
 )
 from app.schemas.common import utcnow
+from app.services.care_data import care_repository
 
 router = APIRouter()
 AuthDep = Annotated[Actor, Depends(current_actor)]
 OptionalAuthDep = Annotated[Actor, Depends(optional_actor)]
+
+
+def _not_found(resource_type: str, resource_id: UUID) -> None:
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "code": f"{resource_type}_not_found",
+            "message": f"{resource_type.replace('_', ' ').title()} was not found.",
+            "details": {"id": str(resource_id)},
+        },
+    )
+
+
+def _parse_datetime_query(value: str | None, parameter: str) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_query_parameter",
+                "message": f"{parameter} must be an ISO-8601 datetime.",
+                "details": {"parameter": parameter},
+            },
+        ) from exc
 
 
 @router.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -85,7 +114,7 @@ def me(request: Request, actor: AuthDep) -> MeResponse:
 @router.post("/patients", response_model=PatientProfile, status_code=status.HTTP_201_CREATED, tags=["Patients"])
 def create_patient(request: Request, body: PatientCreateRequest, actor: AuthDep) -> PatientProfile:
     require_permission(actor, "patient:write")
-    patient = PatientProfile(**body.model_dump(), account_id=actor.user_id)
+    patient = care_repository.create_patient(body, account_id=actor.user_id)
     audit(request, actor=actor, action="patient.profile_created", resource_type="patient_profile", patient_id=patient.id, phi_access=True)
     return patient
 
@@ -94,15 +123,17 @@ def create_patient(request: Request, body: PatientCreateRequest, actor: AuthDep)
 def list_patients(request: Request, actor: AuthDep) -> ItemsResponse:
     require_permission(actor, "patient:read")
     audit(request, actor=actor, action="patient.roster_viewed", resource_type="patient_profile", patient_id=actor.patient_id, phi_access=True)
-    patient_id = actor.patient_id or uuid4()
-    return ItemsResponse(items=[PatientSummary(id=patient_id, full_name="Stub Patient")])
+    return ItemsResponse(items=care_repository.list_patients(scoped_patient_id=actor.patient_id))
 
 
 @router.get("/patients/{patient_id}", response_model=PatientProfile, tags=["Patients"])
 def get_patient(request: Request, patient_id: UUID, actor: AuthDep) -> PatientProfile:
     require_patient_scope(actor, patient_id, "patient:read")
     audit(request, actor=actor, action="patient.profile_viewed", resource_type="patient_profile", patient_id=patient_id, phi_access=True)
-    return PatientProfile(id=patient_id, account_id=actor.user_id, full_name="Stub Patient")
+    patient = care_repository.get_patient(patient_id)
+    if patient is None:
+        _not_found("patient", patient_id)
+    return patient
 
 
 @router.patch("/patients/{patient_id}", response_model=PatientProfile, tags=["Patients"])
@@ -110,7 +141,10 @@ def update_patient(request: Request, patient_id: UUID, body: PatientUpdateReques
     require_patient_scope(actor, patient_id, "patient:write")
     payload = body.model_dump(exclude_none=True)
     audit(request, actor=actor, action="patient.profile_updated", resource_type="patient_profile", patient_id=patient_id, phi_access=True, metadata={"fields": sorted(payload)})
-    return PatientProfile(id=patient_id, account_id=actor.user_id, full_name=payload.get("full_name", "Stub Patient"), **{k: v for k, v in payload.items() if k != "full_name"})
+    patient = care_repository.update_patient(patient_id, payload)
+    if patient is None:
+        _not_found("patient", patient_id)
+    return patient
 
 
 @router.get("/patients/{patient_id}/care-team", response_model=ItemsResponse, tags=["Patients"])
@@ -132,14 +166,24 @@ def add_care_team_member(request: Request, patient_id: UUID, body: CareTeamMembe
 def list_consents(request: Request, patient_id: UUID, actor: AuthDep) -> ItemsResponse:
     require_patient_scope(actor, patient_id, "consent:read")
     audit(request, actor=actor, action="consent.viewed", resource_type="consent_grant", patient_id=patient_id, phi_access=True)
-    return ItemsResponse(items=[])
+    return ItemsResponse(items=care_repository.list_consents(patient_id))
 
 
 @router.post("/patients/{patient_id}/consents", response_model=ConsentGrant, status_code=status.HTTP_201_CREATED, tags=["Consent"])
 def grant_consent(request: Request, patient_id: UUID, body: ConsentGrantRequest, actor: AuthDep) -> ConsentGrant:
     require_patient_scope(actor, patient_id, "consent:write")
-    consent = ConsentGrant(**body.model_dump(), patient_id=patient_id)
+    consent = care_repository.grant_consent(patient_id, body)
     audit(request, actor=actor, action="consent.granted", resource_type="consent_grant", patient_id=patient_id, resource_id=consent.id, phi_access=True, reason=body.reason)
+    return consent
+
+
+@router.get("/patients/{patient_id}/consents/{consent_id}", response_model=ConsentGrant, tags=["Consent"])
+def get_consent(request: Request, patient_id: UUID, consent_id: UUID, actor: AuthDep) -> ConsentGrant:
+    require_patient_scope(actor, patient_id, "consent:read")
+    audit(request, actor=actor, action="consent.viewed", resource_type="consent_grant", patient_id=patient_id, resource_id=consent_id, phi_access=True)
+    consent = care_repository.get_consent(patient_id, consent_id)
+    if consent is None:
+        _not_found("consent", consent_id)
     return consent
 
 
@@ -147,7 +191,10 @@ def grant_consent(request: Request, patient_id: UUID, body: ConsentGrantRequest,
 def revoke_consent(request: Request, patient_id: UUID, consent_id: UUID, body: RevokeConsentRequest | None = None, actor: Actor = Depends(current_actor)) -> ConsentGrant:
     require_patient_scope(actor, patient_id, "consent:write")
     audit(request, actor=actor, action="consent.revoked", resource_type="consent_grant", patient_id=patient_id, resource_id=consent_id, phi_access=True, reason=body.reason if body else None)
-    return ConsentGrant(id=consent_id, patient_id=patient_id, consent_type="stub", consent_text_version="stub", status="revoked")
+    consent = care_repository.revoke_consent(patient_id, consent_id)
+    if consent is None:
+        _not_found("consent", consent_id)
+    return consent
 
 
 @router.get("/device-catalog", response_model=ItemsResponse, tags=["Devices"])
@@ -182,21 +229,39 @@ def list_observations(
 ) -> ObservationListResponse:
     require_patient_scope(actor, patient_id, "observations:read")
     audit(request, actor=actor, action="observations.queried", resource_type="observation", patient_id=patient_id, phi_access=True, metadata={"metric_code": metric_code, "from": from_, "to": to, "limit": limit})
-    return ObservationListResponse(items=[])
+    return ObservationListResponse(
+        items=care_repository.list_observations(
+            patient_id,
+            metric_code=metric_code,
+            observed_from=_parse_datetime_query(from_, "from"),
+            observed_to=_parse_datetime_query(to, "to"),
+            limit=limit,
+        )
+    )
 
 
 @router.post("/patients/{patient_id}/observations", response_model=ObservationBatchCreateResponse, status_code=status.HTTP_202_ACCEPTED, tags=["Observations"])
 def create_observations(request: Request, patient_id: UUID, body: ObservationBatchCreateRequest, actor: AuthDep) -> ObservationBatchCreateResponse:
     require_patient_scope(actor, patient_id, "observations:write")
     audit(request, actor=actor, action="observation.created", resource_type="observation", patient_id=patient_id, phi_access=True, metadata={"accepted_count": len(body.observations)})
-    return ObservationBatchCreateResponse(accepted_count=len(body.observations))
+    return care_repository.create_observations(patient_id, body)
+
+
+@router.get("/patients/{patient_id}/observations/{observation_id}", response_model=Observation, tags=["Observations"])
+def get_observation(request: Request, patient_id: UUID, observation_id: UUID, actor: AuthDep) -> Observation:
+    require_patient_scope(actor, patient_id, "observations:read")
+    audit(request, actor=actor, action="observation.viewed", resource_type="observation", patient_id=patient_id, resource_id=observation_id, phi_access=True)
+    observation = care_repository.get_observation(patient_id, observation_id)
+    if observation is None:
+        _not_found("observation", observation_id)
+    return observation
 
 
 @router.get("/patients/{patient_id}/vitals/latest", response_model=LatestVitalsResponse, tags=["Observations"])
 def latest_vitals(request: Request, patient_id: UUID, actor: AuthDep) -> LatestVitalsResponse:
     require_patient_scope(actor, patient_id, "observations:read")
     audit(request, actor=actor, action="vitals.latest_viewed", resource_type="observation", patient_id=patient_id, phi_access=True)
-    return LatestVitalsResponse(patient_id=patient_id, readings=[VitalReading(metric_code="heart_rate", value=72, unit="bpm")])
+    return care_repository.latest_vitals(patient_id)
 
 
 @router.get("/patients/{patient_id}/documents", response_model=ItemsResponse, tags=["Documents"])
@@ -253,14 +318,24 @@ def answer_question(request: Request, patient_id: UUID, body: PatientQuestionReq
 def list_medicines(request: Request, patient_id: UUID, actor: AuthDep) -> ItemsResponse:
     require_patient_scope(actor, patient_id, "medicines:read")
     audit(request, actor=actor, action="medicines.viewed", resource_type="medicine", patient_id=patient_id, phi_access=True)
-    return ItemsResponse(items=[])
+    return ItemsResponse(items=care_repository.list_medicines(patient_id))
 
 
 @router.post("/patients/{patient_id}/medicines", response_model=Medicine, status_code=status.HTTP_201_CREATED, tags=["Medicines"])
 def create_medicine(request: Request, patient_id: UUID, body: MedicineCreateRequest, actor: AuthDep) -> Medicine:
     require_patient_scope(actor, patient_id, "medicines:write")
-    medicine = Medicine(**body.model_dump(), patient_id=patient_id)
+    medicine = care_repository.create_medicine(patient_id, body)
     audit(request, actor=actor, action="medicine.created", resource_type="medicine", patient_id=patient_id, resource_id=medicine.id, phi_access=True)
+    return medicine
+
+
+@router.get("/patients/{patient_id}/medicines/{medicine_id}", response_model=Medicine, tags=["Medicines"])
+def get_medicine(request: Request, patient_id: UUID, medicine_id: UUID, actor: AuthDep) -> Medicine:
+    require_patient_scope(actor, patient_id, "medicines:read")
+    audit(request, actor=actor, action="medicine.viewed", resource_type="medicine", patient_id=patient_id, resource_id=medicine_id, phi_access=True)
+    medicine = care_repository.get_medicine(patient_id, medicine_id)
+    if medicine is None:
+        _not_found("medicine", medicine_id)
     return medicine
 
 
@@ -268,13 +343,13 @@ def create_medicine(request: Request, patient_id: UUID, body: MedicineCreateRequ
 def list_medicine_schedule(request: Request, patient_id: UUID, actor: AuthDep) -> ItemsResponse:
     require_patient_scope(actor, patient_id, "medicines:read")
     audit(request, actor=actor, action="medicine_schedule.viewed", resource_type="medicine_schedule", patient_id=patient_id, phi_access=True)
-    return ItemsResponse(items=[])
+    return ItemsResponse(items=care_repository.list_medicine_schedules(patient_id))
 
 
 @router.post("/patients/{patient_id}/medicine-schedule", response_model=MedicineSchedule, tags=["Medicines"])
 def upsert_medicine_schedule(request: Request, patient_id: UUID, body: MedicineScheduleUpsertRequest, actor: AuthDep) -> MedicineSchedule:
     require_patient_scope(actor, patient_id, "medicines:write")
-    schedule = MedicineSchedule(**body.model_dump(), patient_id=patient_id)
+    schedule = care_repository.upsert_medicine_schedule(patient_id, body)
     audit(request, actor=actor, action="medicine_schedule.upserted", resource_type="medicine_schedule", patient_id=patient_id, resource_id=schedule.id, phi_access=True)
     return schedule
 
@@ -282,7 +357,7 @@ def upsert_medicine_schedule(request: Request, patient_id: UUID, body: MedicineS
 @router.post("/patients/{patient_id}/dose-events", response_model=MedicineDoseEvent, status_code=status.HTTP_201_CREATED, tags=["Medicines"])
 def record_dose_event(request: Request, patient_id: UUID, body: DoseEventCreateRequest, actor: AuthDep) -> MedicineDoseEvent:
     require_patient_scope(actor, patient_id, "medicines:write")
-    dose = body.model_copy(update={"patient_id": patient_id})
+    dose = care_repository.record_dose_event(patient_id, body)
     audit(request, actor=actor, action="medicine_dose.recorded", resource_type="medicine_dose_event", patient_id=patient_id, resource_id=dose.id, phi_access=True)
     return dose
 

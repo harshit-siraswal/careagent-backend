@@ -33,7 +33,14 @@ def test_authenticated_routes_require_bearer_token() -> None:
 
 
 def test_patient_scope_allows_matching_patient_and_permission() -> None:
-    patient_id = str(uuid4())
+    create_response = client.post(
+        "/patients",
+        headers=auth_headers(str(uuid4()), permissions="patient:write"),
+        json={"full_name": "Scope Test Patient"},
+    )
+    assert create_response.status_code == 201
+
+    patient_id = create_response.json()["id"]
     response = client.get(f"/patients/{patient_id}", headers=auth_headers(patient_id))
 
     assert response.status_code == 200
