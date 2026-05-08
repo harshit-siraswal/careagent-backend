@@ -47,6 +47,13 @@ Use `SUPABASE_ANON_KEY` only if the project still uses legacy anon keys. Never p
 
 ## Backend Follow-Up
 
+The Supabase database now includes a CareAgent auth bridge:
+
+- `auth_provider` includes `supabase`.
+- `auth.users` inserts/updates trigger `private.sync_supabase_auth_user()`.
+- The trigger upserts `user_accounts` and `auth_identities`.
+- RLS helper functions fall back to `auth.uid()` and JWT app metadata when the FastAPI-local `app.*` settings are absent.
+
 The FastAPI backend still uses placeholder bearer/header auth for local contract tests. To accept Supabase-authenticated requests in production:
 
 - Validate Supabase JWTs against the project JWKS.

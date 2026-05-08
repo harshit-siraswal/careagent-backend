@@ -10,6 +10,8 @@ This directory contains the backend API and data-platform contract for the CareA
 - `migrations/004_security_lint_fixes.sql` - Supabase advisor security hardening for function search paths, private RLS helper placement, and extension schema placement.
 - `migrations/005_performance_lint_fixes.sql` - Missing foreign-key index creation and RLS policy split for read-heavy catalog tables.
 - `migrations/006_drop_generated_duplicate_indexes.sql` - Cleanup for generated FK indexes when a hand-named index already covers the same columns.
+- `migrations/007_add_supabase_auth_provider.sql` - Adds Supabase Auth as an allowed auth identity provider.
+- `migrations/008_add_supabase_auth_bridge.sql` - Syncs Supabase Auth users into CareAgent account and identity tables and lets RLS helpers fall back to Supabase JWT claims.
 - `migrations/README.md` - Notes on applying and eventually renumbering independent extension migrations.
 - `openapi/careagent-backend-v1.yaml` - API route list with request/response schemas and route-level authorization/audit annotations.
 - `openapi/channels-calls-escalation.openapi.yaml` - Channel linking, dispatch, webhook, and emergency simulation route extensions.

@@ -9,6 +9,8 @@ The current planning pack has independent extension migrations after `001_`:
 - `004_security_lint_fixes.sql`
 - `005_performance_lint_fixes.sql`
 - `006_drop_generated_duplicate_indexes.sql`
+- `007_add_supabase_auth_provider.sql`
+- `008_add_supabase_auth_bridge.sql`
 
 The extension migrations depend on `001_initial_backend_platform.sql`, and the lint-fix migrations depend on the complete schema produced by `001_` through `003_`. Before wiring these into Alembic, Flyway, or another ordered migration runner, keep the same ordering or convert them into proper revision IDs.
 
@@ -20,6 +22,8 @@ Recommended final order:
 4. `004_security_lint_fixes.sql`
 5. `005_performance_lint_fixes.sql`
 6. `006_drop_generated_duplicate_indexes.sql`
+7. `007_add_supabase_auth_provider.sql`
+8. `008_add_supabase_auth_bridge.sql`
 
 The order above keeps ingestion/metric primitives available before channel escalation simulation tests reference device-generated risk scenarios.
 
