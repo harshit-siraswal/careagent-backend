@@ -17,6 +17,7 @@ This directory contains the backend API and data-platform contract for the CareA
 - `docs/authorization-matrix.md` - role and patient-scope authorization rules.
 - `docs/queue-event-design.md` - outbox, queue, worker, and event payload design.
 - `docs/audit-events.md` - audit event catalogue and required audit semantics.
+- `docs/remaining-backend-work-report.md` - current backend implementation gap report and production-readiness blockers.
 - `tests/backend-contract-test-plan.md` - unit and integration test plan for the backend implementation.
 - `tests/emergency_simulation_scenarios.md` and `tests/emergency_simulation_cases.json` - Scenario-driven escalation simulation fixtures.
 - `scripts/apply_migrations.ps1` - Applies the SQL migrations in order with `psql` and a supplied Postgres connection URL.
