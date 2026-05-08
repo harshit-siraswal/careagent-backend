@@ -23,6 +23,7 @@ This directory contains the backend API and data-platform contract for the CareA
 - `scripts/apply_migrations.ps1` - Applies the SQL migrations in order with `psql` and a supplied Postgres connection URL.
 - `scripts/validate_migrations.ps1` - Runs validation queries for RLS, policies, comments, and audit immutability.
 - `docs/supabase-deployment.md` - Supabase project deployment notes for `careagent-backend` (`kgkfrrffrjfltswwcsmw`, `ap-south-1`).
+- `docs/supabase-google-auth.md` - Google OAuth setup for Supabase Auth and Flutter redirect configuration.
 
 ## Non-Negotiable Backend Invariants
 
