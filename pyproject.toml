@@ -22,6 +22,18 @@ test = [
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = [
+  "docs*",
+  "migrations*",
+  "openapi*",
+  "scripts*",
+  "supabase*",
+  "templates*",
+  "tests*",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
