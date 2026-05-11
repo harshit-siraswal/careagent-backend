@@ -38,11 +38,11 @@ services:
       - key: MAX_REQUEST_BODY_BYTES
         value: "8388608"
       - key: MAKE_MCP_SERVER_URL
-        sync: false
+        value: ""
       - key: MAKE_MCP_BEARER_TOKEN
-        sync: false
+        value: ""
       - key: MAKE_MCP_CALL_TOOL_NAME
-        sync: false
+        value: ""
       - key: MAKE_MCP_TIMEOUT_SECONDS
         value: "20"
       - key: MAKE_MCP_ALLOW_REAL_CALLS
