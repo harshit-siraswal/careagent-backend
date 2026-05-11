@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -9,6 +10,7 @@ from typing import Any, Protocol, TypeVar
 from uuid import UUID, uuid4
 
 from app.core.config import get_settings
+from app.core.request_context import get_database_actor_context
 from app.schemas import (
     Alert,
     ConsentGrant,
@@ -67,6 +69,8 @@ class CareRepository(Protocol):
     ) -> ActorAccount: ...
 
     def list_actor_grants(self, account_id: UUID) -> list[dict[str, Any]]: ...
+
+    def account_patient_id(self, account_id: UUID) -> UUID | None: ...
 
     def record_audit_event(self, event: Any) -> None: ...
 
@@ -218,6 +222,13 @@ class InMemoryCareRepository:
 
     def list_actor_grants(self, account_id: UUID) -> list[dict[str, Any]]:
         return []
+
+    def account_patient_id(self, account_id: UUID) -> UUID | None:
+        with self._lock:
+            return next(
+                (patient.id for patient in self._patients.values() if patient.account_id == account_id),
+                None,
+            )
 
     def record_audit_event(self, event: Any) -> None:
         with self._lock:
@@ -619,6 +630,7 @@ class PostgresCareRepository:
     def __init__(self, database_url: str, document_bucket: str) -> None:
         self.database_url = database_url
         self.document_bucket = document_bucket
+        self._pool: Any | None = None
 
     def reset(self) -> None:
         return None
@@ -686,6 +698,14 @@ class PostgresCareRepository:
                 }
                 for row in rows
             ]
+
+    def account_patient_id(self, account_id: UUID) -> UUID | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "select id from patient_profiles where account_id = %s",
+                (account_id,),
+            ).fetchone()
+            return row["id"] if row else None
 
     def record_audit_event(self, event: Any) -> None:
         with self._connect() as conn:
@@ -1315,13 +1335,34 @@ class PostgresCareRepository:
             )
             return _run(conn, row)
 
+    @contextmanager
     def _connect(self):
         try:
-            import psycopg
             from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
         except ImportError as exc:
-            raise RuntimeError("psycopg[binary] is required when DATABASE_URL is set") from exc
-        return psycopg.connect(self.database_url, row_factory=dict_row, autocommit=True)
+            raise RuntimeError("psycopg_pool is required when DATABASE_URL is set") from exc
+        if self._pool is None:
+            self._pool = ConnectionPool(
+                conninfo=self.database_url,
+                kwargs={"row_factory": dict_row},
+                min_size=1,
+                max_size=5,
+                open=False,
+            )
+            self._pool.open()
+        with self._pool.connection() as conn:
+            self._apply_database_context(conn)
+            yield conn
+
+    def _apply_database_context(self, conn: Any) -> None:
+        context = get_database_actor_context()
+        if context is None:
+            return
+        conn.execute(
+            "select set_config('app.user_id', %s, true), set_config('app.role', %s, true)",
+            (str(context.user_id), context.role),
+        )
 
 
 def _json(value: Any) -> str:

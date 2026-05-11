@@ -16,11 +16,13 @@ if (-not $psqlCommand) {
   throw "psql was not found. Install PostgreSQL client tools or pass -PsqlPath with the full path to psql."
 }
 
-$orderedMigrations = @(
-  "001_initial_backend_platform.sql",
-  "002_health_device_integrations.sql",
-  "003_channels_calls_escalation.sql"
-)
+$orderedMigrations = Get-ChildItem -LiteralPath $MigrationsPath -Filter "*.sql" -File |
+  Sort-Object Name |
+  Select-Object -ExpandProperty Name
+
+if ($orderedMigrations.Count -eq 0) {
+  throw "No migration files found in $MigrationsPath"
+}
 
 foreach ($migration in $orderedMigrations) {
   $path = Join-Path $MigrationsPath $migration

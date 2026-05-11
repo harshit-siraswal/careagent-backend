@@ -5,6 +5,7 @@ from fastapi import Header, HTTPException, Request
 
 from app.core.config import get_settings
 from app.core.firebase import get_firebase_verifier
+from app.core.request_context import set_database_actor_context
 from app.services.care_data import care_repository
 
 
@@ -69,7 +70,7 @@ def current_actor(
     settings = get_settings()
     if settings.require_firebase:
         actor = _actor_from_firebase_token(request, token, x_request_id)
-        request.state.actor = actor
+        _apply_actor(request, actor)
         return actor
 
     permissions = _parse_permissions(x_careagent_permissions)
@@ -84,7 +85,7 @@ def current_actor(
         patient_id=x_careagent_patient_id,
         request_id=x_request_id or str(uuid4()),
     )
-    request.state.actor = actor
+    _apply_actor(request, actor)
     return actor
 
 
@@ -105,7 +106,7 @@ def optional_actor(
             patient_id=x_careagent_patient_id,
             request_id=x_request_id or str(uuid4()),
         )
-        request.state.actor = actor
+        _apply_actor(request, actor)
         return actor
     return current_actor(
         request,
@@ -147,6 +148,10 @@ def require_permission(actor: Actor, permission: str) -> None:
             "details": {"permission": permission},
         },
     )
+
+
+def can_bootstrap_patient(actor: Actor) -> bool:
+    return actor.role == "patient" and actor.patient_id is None
 
 
 def _parse_permissions(raw: str | None) -> set[str]:
@@ -191,3 +196,11 @@ def _actor_from_firebase_token(
     )
     request.state.firebase_claims = claims
     return actor
+
+
+def _apply_actor(request: Request, actor: Actor) -> None:
+    request.state.actor = actor
+    request.state.actor_context_token = set_database_actor_context(
+        actor.user_id,
+        actor.role,
+    )

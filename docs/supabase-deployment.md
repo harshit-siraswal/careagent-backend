@@ -17,6 +17,8 @@ Apply migrations in this order:
 4. `migrations/004_security_lint_fixes.sql`
 5. `migrations/005_performance_lint_fixes.sql`
 6. `migrations/006_drop_generated_duplicate_indexes.sql`
+7. `migrations/007_add_supabase_auth_provider.sql`
+8. `migrations/008_add_supabase_auth_bridge.sql`
 
 The migrations assume a fresh database or a database where Supabase migration history prevents re-applying the same files. Do not re-run them manually against an already migrated database unless you have confirmed the target schema state.
 
@@ -62,5 +64,7 @@ All public tables are expected to have RLS enabled. PHI-bearing tables are patie
 - `app.role`
 
 Backend request handling must set these variables inside the transaction before accessing patient-scoped tables. Worker and privileged maintenance paths should use database credentials that intentionally bypass RLS rather than weakening table policies.
+
+The FastAPI runtime now sets those variables from the authenticated actor context for repository calls. Production deployments must use a restricted runtime database user, not the `postgres` or `supabase_admin` user.
 
 Do not store provider secrets in public tables. Channel provider rows use `secret_ref`, and connector accounts use `token_vault_ref` for external secret storage references.

@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from app.core.audit import audit
-from app.core.security import Actor, current_actor, optional_actor, require_patient_scope, require_permission
+from app.core.security import Actor, can_bootstrap_patient, current_actor, optional_actor, require_patient_scope, require_permission
 from app.schemas import (
     AcknowledgeRequest,
     AgentMessageRequest,
@@ -116,7 +116,19 @@ def me(request: Request, actor: AuthDep) -> MeResponse:
 
 @router.post("/patients", response_model=PatientProfile, status_code=status.HTTP_201_CREATED, tags=["Patients"])
 def create_patient(request: Request, body: PatientCreateRequest, actor: AuthDep) -> PatientProfile:
-    require_permission(actor, "patient:write")
+    if can_bootstrap_patient(actor):
+        existing_patient_id = care_repository.account_patient_id(actor.user_id)
+        if existing_patient_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "patient_profile_already_exists",
+                    "message": "This account already owns a patient profile.",
+                    "details": {"patient_id": str(existing_patient_id)},
+                },
+            )
+    else:
+        require_permission(actor, "patient:write")
     patient = care_repository.create_patient(body, account_id=actor.user_id)
     audit(request, actor=actor, action="patient.profile_created", resource_type="patient_profile", patient_id=patient.id, phi_access=True)
     return patient
@@ -124,7 +136,8 @@ def create_patient(request: Request, body: PatientCreateRequest, actor: AuthDep)
 
 @router.get("/patients", response_model=ItemsResponse, tags=["Patients"])
 def list_patients(request: Request, actor: AuthDep) -> ItemsResponse:
-    require_permission(actor, "patient:read")
+    if not (actor.role == "patient" and actor.patient_id is not None):
+        require_permission(actor, "patient:read")
     audit(request, actor=actor, action="patient.roster_viewed", resource_type="patient_profile", patient_id=actor.patient_id, phi_access=True)
     return ItemsResponse(items=care_repository.list_patients(scoped_patient_id=actor.patient_id))
 

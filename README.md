@@ -54,6 +54,8 @@ The backend now supports a pilot production mode:
 - `CAREAGENT_AUTH_MODE=firebase` validates Firebase ID tokens.
 - `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` configure Firebase Admin verification.
 - `CORS_ALLOWED_ORIGINS` must include the Vercel frontend URL.
+- `TRUSTED_HOSTS` must include the deployed API host.
+- `ENABLE_API_DOCS=false` is required for production startup.
 - `AGENT_RUNTIME_ADAPTER=mock` and `AGENT_RUNTIME_PROVIDER=mock` keep agent actions simulation-only.
 
 Render can use the included `render.yaml` Blueprint. Secrets marked with
@@ -84,3 +86,4 @@ $env:SUPABASE_DB_URL = "postgresql://postgres:<password>@db.kgkfrrffrjfltswwcsmw
 ```
 
 The scripts use a Postgres connection string and do not assume a Supabase `service_role` JWT is available.
+The runtime `DATABASE_URL` should use a restricted app database user, not the `postgres` admin user.
