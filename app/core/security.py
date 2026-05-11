@@ -3,6 +3,10 @@ from uuid import UUID, uuid4
 
 from fastapi import Header, HTTPException, Request
 
+from app.core.config import get_settings
+from app.core.firebase import get_firebase_verifier
+from app.services.care_data import care_repository
+
 
 ALL_PERMISSIONS = {
     "patient:read",
@@ -60,6 +64,13 @@ def current_actor(
             status_code=401,
             detail={"code": "invalid_authorization_header", "message": "Use a Bearer token."},
         )
+
+    token = authorization.split(" ", 1)[1].strip()
+    settings = get_settings()
+    if settings.require_firebase:
+        actor = _actor_from_firebase_token(request, token, x_request_id)
+        request.state.actor = actor
+        return actor
 
     permissions = _parse_permissions(x_careagent_permissions)
     if x_careagent_role in {"admin", "system"}:
@@ -142,3 +153,41 @@ def _parse_permissions(raw: str | None) -> set[str]:
     if not raw:
         return set()
     return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def _actor_from_firebase_token(
+    request: Request,
+    token: str,
+    x_request_id: str | None,
+) -> Actor:
+    claims = get_firebase_verifier().verify_token(token)
+    subject = str(claims.get("uid") or claims.get("sub") or "")
+    if not subject:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "firebase_subject_missing", "message": "Firebase token has no subject."},
+        )
+    account = care_repository.get_or_create_account_for_firebase(
+        subject=subject,
+        email=claims.get("email"),
+        display_name=claims.get("name"),
+        claims=claims,
+    )
+    grants = care_repository.list_actor_grants(account.id)
+    permissions: set[str] = set()
+    patient_id: UUID | None = account.patient_id
+    role = account.role
+    for grant in grants:
+        permissions.update(grant.get("permissions", []))
+        if patient_id is None and grant.get("patient_id"):
+            patient_id = UUID(str(grant["patient_id"]))
+
+    actor = Actor(
+        user_id=account.id,
+        role=role,
+        permissions=permissions,
+        patient_id=patient_id,
+        request_id=x_request_id or str(uuid4()),
+    )
+    request.state.firebase_claims = claims
+    return actor

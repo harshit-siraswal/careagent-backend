@@ -46,6 +46,19 @@ This branch includes a minimal FastAPI skeleton for local contract iteration. It
 - PHI routes call patient-scope checks and append audit events to request state.
 - Idempotent stubs such as document upload and escalation start require `Idempotency-Key`.
 
+## Pilot Runtime Configuration
+
+The backend now supports a pilot production mode:
+
+- `DATABASE_URL` enables the Supabase/Postgres-backed repository.
+- `CAREAGENT_AUTH_MODE=firebase` validates Firebase ID tokens.
+- `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` configure Firebase Admin verification.
+- `CORS_ALLOWED_ORIGINS` must include the Vercel frontend URL.
+- `AGENT_RUNTIME_ADAPTER=mock` and `AGENT_RUNTIME_PROVIDER=mock` keep agent actions simulation-only.
+
+Render can use the included `render.yaml` Blueprint. Secrets marked with
+`sync: false` must be filled in the Render Dashboard.
+
 Run locally:
 
 ```powershell

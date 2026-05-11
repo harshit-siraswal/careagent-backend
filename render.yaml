@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: careagent-backend
+    runtime: python
+    plan: free
+    buildCommand: python -m pip install --upgrade pip && python -m pip install -e .
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: CAREAGENT_AUTH_MODE
+        value: firebase
+      - key: AGENT_RUNTIME_ADAPTER
+        value: mock
+      - key: AGENT_RUNTIME_PROVIDER
+        value: mock
+      - key: DOCUMENT_STORAGE_BUCKET
+        value: careagent-documents
+      - key: DATABASE_URL
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
