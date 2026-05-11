@@ -45,6 +45,12 @@ class Settings:
             120,
         )
         self.api_docs_enabled = _read_bool("ENABLE_API_DOCS", not self.is_production)
+        self.voice_provider_adapter = _read("VOICE_PROVIDER_ADAPTER", "mock").lower()
+        self.make_mcp_server_url = _read("MAKE_MCP_SERVER_URL", "")
+        self.make_mcp_bearer_token = _read("MAKE_MCP_BEARER_TOKEN", "")
+        self.make_mcp_call_tool_name = _read("MAKE_MCP_CALL_TOOL_NAME", "")
+        self.make_mcp_timeout_seconds = _read_int("MAKE_MCP_TIMEOUT_SECONDS", 20)
+        self.make_mcp_allow_real_calls = _read_bool("MAKE_MCP_ALLOW_REAL_CALLS", False)
         self._validate()
 
     @property
@@ -70,6 +76,30 @@ class Settings:
     def _validate(self) -> None:
         if self.auth_mode not in {"firebase", "test"}:
             raise SettingsError("CAREAGENT_AUTH_MODE must be 'firebase' or 'test'")
+
+        if self.voice_provider_adapter not in {"mock", "make_mcp"}:
+            raise SettingsError("VOICE_PROVIDER_ADAPTER must be 'mock' or 'make_mcp'")
+
+        if self.make_mcp_timeout_seconds <= 0:
+            raise SettingsError("MAKE_MCP_TIMEOUT_SECONDS must be greater than zero")
+
+        if self.voice_provider_adapter == "make_mcp":
+            missing_make_mcp = [
+                name
+                for name, value in {
+                    "MAKE_MCP_SERVER_URL": self.make_mcp_server_url,
+                    "MAKE_MCP_BEARER_TOKEN": self.make_mcp_bearer_token,
+                    "MAKE_MCP_CALL_TOOL_NAME": self.make_mcp_call_tool_name,
+                }.items()
+                if not value
+            ]
+            if missing_make_mcp:
+                raise SettingsError(
+                    f"{', '.join(missing_make_mcp)} required when VOICE_PROVIDER_ADAPTER=make_mcp"
+                )
+
+        if self.is_production and self.make_mcp_allow_real_calls:
+            raise SettingsError("MAKE_MCP_ALLOW_REAL_CALLS must remain false in production")
 
         if self.max_request_body_bytes <= 0:
             raise SettingsError("MAX_REQUEST_BODY_BYTES must be greater than zero")

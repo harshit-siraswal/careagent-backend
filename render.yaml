@@ -26,7 +26,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: FIREBASE_PROJECT_ID
-        value: careagent-pilot
+        value: studyspace-kiet
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
       - key: CORS_ALLOWED_ORIGINS
@@ -38,11 +38,11 @@ services:
       - key: MAX_REQUEST_BODY_BYTES
         value: "8388608"
       - key: MAKE_MCP_SERVER_URL
-        value: ""
+        sync: false
       - key: MAKE_MCP_BEARER_TOKEN
-        value: ""
+        sync: false
       - key: MAKE_MCP_CALL_TOOL_NAME
-        value: ""
+        sync: false
       - key: MAKE_MCP_TIMEOUT_SECONDS
         value: "20"
       - key: MAKE_MCP_ALLOW_REAL_CALLS

@@ -52,11 +52,14 @@ The backend now supports a pilot production mode:
 
 - `DATABASE_URL` enables the Supabase/Postgres-backed repository.
 - `CAREAGENT_AUTH_MODE=firebase` validates Firebase ID tokens.
-- `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` configure Firebase Admin verification.
+- `FIREBASE_PROJECT_ID=studyspace-kiet` and `FIREBASE_SERVICE_ACCOUNT_JSON` configure Firebase Admin verification against the Studyspace Firebase project.
 - `CORS_ALLOWED_ORIGINS` must include the Vercel frontend URL.
 - `TRUSTED_HOSTS` must include the deployed API host.
 - `ENABLE_API_DOCS=false` is required for production startup.
 - `AGENT_RUNTIME_ADAPTER=mock` and `AGENT_RUNTIME_PROVIDER=mock` keep agent actions simulation-only.
+- `VOICE_PROVIDER_ADAPTER=mock` keeps voice calls fully simulated.
+- `VOICE_PROVIDER_ADAPTER=make_mcp` enables the Make MCP voice adapter, but only for simulation calls unless `MAKE_MCP_ALLOW_REAL_CALLS=true` in a non-production environment.
+- `MAKE_MCP_SERVER_URL`, `MAKE_MCP_BEARER_TOKEN`, and `MAKE_MCP_CALL_TOOL_NAME` are required when the Make adapter is enabled. Do not commit these values.
 
 Render can use the included `render.yaml` Blueprint. Secrets marked with
 `sync: false` must be filled in the Render Dashboard.
@@ -74,6 +77,16 @@ Verify locally:
 python -m compileall app
 python -m pytest
 ```
+
+Probe a Make MCP server without printing the bearer token:
+
+```powershell
+$env:MAKE_MCP_SERVER_URL = "https://eu1.make.com/mcp/server/<server-id>"
+$env:MAKE_MCP_BEARER_TOKEN = "<token>"
+.\scripts\probe_make_mcp.ps1
+```
+
+The Make server must expose a calling tool before `MAKE_MCP_CALL_TOOL_NAME` can be set. The backend passes a structured `careagent.voice_call.requested` payload to that tool and keeps production real calls disabled by configuration.
 
 ## Supabase Migration Quickstart
 

@@ -20,6 +20,7 @@ from app.domain.channels import (
     ProviderKind,
     RenderedContent,
 )
+from app.core.config import Settings
 
 
 class ProviderAdapter(Protocol):
@@ -213,6 +214,32 @@ def default_mock_adapters(*, simulation: bool = True) -> dict[Channel, MockProvi
         Channel.EMAIL: MockProviderAdapter(ProviderConfig("mock_email", Channel.EMAIL, ProviderKind.MOCK_SIMULATOR, environment)),
         Channel.VOICE: MockProviderAdapter(ProviderConfig("mock_voice", Channel.VOICE, ProviderKind.MOCK_SIMULATOR, environment)),
     }
+
+
+def configured_adapters(settings: Settings, *, simulation: bool = True) -> dict[Channel, ProviderAdapter]:
+    adapters: dict[Channel, ProviderAdapter] = dict(default_mock_adapters(simulation=simulation))
+    if settings.voice_provider_adapter != "make_mcp":
+        return adapters
+
+    from app.services.make_mcp import MakeMcpClient, MakeMcpVoiceAdapter
+
+    adapters[Channel.VOICE] = MakeMcpVoiceAdapter(
+        ProviderConfig(
+            "make_mcp_voice",
+            Channel.VOICE,
+            ProviderKind.MOCK_SIMULATOR,
+            ProviderEnvironment.SANDBOX,
+            capabilities={"transport": "make_mcp"},
+        ),
+        client=MakeMcpClient(
+            settings.make_mcp_server_url,
+            settings.make_mcp_bearer_token,
+            settings.make_mcp_timeout_seconds,
+        ),
+        call_tool_name=settings.make_mcp_call_tool_name,
+        allow_real_calls=settings.make_mcp_allow_real_calls,
+    )
+    return adapters
 
 
 def _render(template: str, variables: dict[str, str]) -> str:

@@ -61,6 +61,29 @@ def test_production_settings_accept_hardened_configuration(monkeypatch: pytest.M
     assert settings.trusted_hosts == ["api.careagent.example"]
 
 
+def test_make_mcp_adapter_requires_call_tool_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_production_env(
+        monkeypatch,
+        VOICE_PROVIDER_ADAPTER="make_mcp",
+        MAKE_MCP_SERVER_URL="https://eu1.make.com/mcp/server/example",
+        MAKE_MCP_BEARER_TOKEN="secret",
+        MAKE_MCP_CALL_TOOL_NAME="",
+    )
+
+    with pytest.raises(SettingsError, match="MAKE_MCP_CALL_TOOL_NAME required"):
+        Settings()
+
+
+def test_production_settings_reject_real_make_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_production_env(
+        monkeypatch,
+        MAKE_MCP_ALLOW_REAL_CALLS="true",
+    )
+
+    with pytest.raises(SettingsError, match="MAKE_MCP_ALLOW_REAL_CALLS must remain false"):
+        Settings()
+
+
 def test_apply_migrations_script_discovers_all_sql_migrations() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script = (repo_root / "scripts" / "apply_migrations.ps1").read_text()
