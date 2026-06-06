@@ -46,6 +46,23 @@ def test_health_is_public() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_hackathon_showcase_contract_is_public_and_channel_rich() -> None:
+    response = client.get("/demo/hackathon-showcase")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scenario"] == "critical-vitals-multi-contact-escalation"
+    assert payload["patient"]["name"] == "Ravi Sharma"
+    assert {channel["channel"] for channel in payload["channels"]} >= {
+        "whatsapp",
+        "telegram",
+        "voice",
+    }
+    assert len(payload["contacts"]) >= 4
+    assert payload["escalation_ladder"][-1]["status"] == "mvp_gated"
+    assert "No real emergency services in simulation mode." in payload["guardrails"]
+
+
 def test_authenticated_routes_require_bearer_token() -> None:
     response = client.get("/me")
 

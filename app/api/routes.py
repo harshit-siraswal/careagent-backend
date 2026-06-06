@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -108,6 +108,135 @@ def _parse_datetime_query(value: str | None, parameter: str) -> datetime | None:
 @router.get("/health", response_model=HealthResponse, tags=["Health"])
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@router.get("/demo/hackathon-showcase", tags=["Demo"])
+def hackathon_showcase() -> dict[str, Any]:
+    """Return the synthetic end-to-end showcase scenario for demos."""
+    return {
+        "scenario": "critical-vitals-multi-contact-escalation",
+        "generated_at": utcnow().isoformat(),
+        "patient": {
+            "name": "Ravi Sharma",
+            "age": 68,
+            "location": "Noida Sector 62",
+            "conditions": [
+                "Type 2 diabetes",
+                "Hypertension",
+                "Post-stent follow-up",
+            ],
+            "allergies": ["Penicillin"],
+            "emergency_address": "Tower B, Sunrise Residency, Sector 62, Noida, UP",
+        },
+        "latest_vitals": [
+            {
+                "metric_code": "heart_rate",
+                "value": 132,
+                "unit": "bpm",
+                "source": "Watch BLE simulator",
+                "freshness": "fresh",
+                "severity": "critical",
+            },
+            {
+                "metric_code": "spo2",
+                "value": 91,
+                "unit": "%",
+                "source": "Pulse oximeter",
+                "freshness": "fresh",
+                "severity": "high",
+            },
+            {
+                "metric_code": "blood_pressure",
+                "value": "165/98",
+                "unit": "mmHg",
+                "source": "Manual cuff",
+                "freshness": "fresh",
+                "severity": "high",
+            },
+        ],
+        "contacts": [
+            {
+                "priority": 1,
+                "name": "Meera Sharma",
+                "role": "primary_caretaker",
+                "channels": ["push", "whatsapp", "voice"],
+                "verification": "verified",
+            },
+            {
+                "priority": 2,
+                "name": "Amit Sharma",
+                "role": "secondary_caretaker",
+                "channels": ["telegram", "voice"],
+                "verification": "verified",
+            },
+            {
+                "priority": 3,
+                "name": "Dr. Neha Verma",
+                "role": "cardiologist",
+                "channels": ["whatsapp", "voice"],
+                "verification": "clinic_verified",
+            },
+            {
+                "priority": 4,
+                "name": "CarePlus Ambulance Desk",
+                "role": "private_ambulance",
+                "channels": ["voice"],
+                "verification": "contract_pending",
+            },
+        ],
+        "channels": [
+            {
+                "channel": "whatsapp",
+                "provider": "WhatsApp Cloud API or approved BSP",
+                "template": "critical_escalation_caretaker_v1",
+                "mode": "simulation_until_waba_ready",
+                "required_setup": [
+                    "WABA or BSP account",
+                    "phone number id",
+                    "approved templates",
+                    "webhook secret",
+                ],
+            },
+            {
+                "channel": "telegram",
+                "provider": "Telegram Bot API",
+                "template": "telegram_ack_callback_v1",
+                "mode": "simulation_until_bot_webhook_ready",
+                "required_setup": ["bot token", "bot username", "webhook URL"],
+            },
+            {
+                "channel": "voice",
+                "provider": "Twilio, Exotel, or Plivo",
+                "script": "critical_caretaker_call_v1",
+                "mode": "test_call_only_until_provider_selected",
+                "required_setup": [
+                    "provider credentials",
+                    "caller id",
+                    "DTMF callback URL",
+                    "retry policy approval",
+                ],
+            },
+        ],
+        "escalation_ladder": [
+            {"step": 1, "channel": "push", "target": "patient", "status": "delivered"},
+            {"step": 2, "channel": "whatsapp", "target": "Meera Sharma", "status": "ready"},
+            {"step": 3, "channel": "telegram", "target": "Amit Sharma", "status": "ready"},
+            {"step": 4, "channel": "voice", "target": "Meera Sharma", "status": "test_call"},
+            {"step": 5, "channel": "voice", "target": "Dr. Neha Verma", "status": "fallback"},
+            {
+                "step": 6,
+                "channel": "voice",
+                "target": "CarePlus Ambulance Desk",
+                "status": "mvp_gated",
+            },
+        ],
+        "guardrails": [
+            "No real emergency services in simulation mode.",
+            "Every outbound action requires consent, verification, policy, and audit.",
+            "Voice calls must disclose AI identity and patient authorization.",
+            "Acknowledgement records receipt; it is not clinical resolution.",
+        ],
+    }
 
 
 @router.post("/auth/session", response_model=AuthSessionResponse, tags=["Auth"])
