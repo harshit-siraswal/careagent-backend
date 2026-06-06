@@ -78,11 +78,16 @@ def current_actor(
         permissions.add("patient:*")
         permissions.update(ALL_PERMISSIONS)
 
+    user_id = x_careagent_actor_id or uuid4()
+    patient_id = x_careagent_patient_id
+    if patient_id is None and x_careagent_role == "patient":
+        patient_id = care_repository.account_patient_id(user_id)
+
     actor = Actor(
-        user_id=x_careagent_actor_id or uuid4(),
+        user_id=user_id,
         role=x_careagent_role,
         permissions=permissions,
-        patient_id=x_careagent_patient_id,
+        patient_id=patient_id,
         request_id=x_request_id or str(uuid4()),
     )
     _apply_actor(request, actor)

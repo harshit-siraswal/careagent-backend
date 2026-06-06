@@ -87,6 +87,42 @@ def test_patient_can_bootstrap_exactly_one_self_owned_profile() -> None:
     assert duplicate.json()["error"]["code"] == "patient_profile_already_exists"
 
 
+def test_patient_bootstrap_is_loadable_without_patient_header() -> None:
+    actor_id = str(uuid4())
+    create_response = client.post(
+        "/patients",
+        headers=patient_headers(actor_id),
+        json={"full_name": "Loadable Patient"},
+    )
+    assert create_response.status_code == 201
+    patient_id = create_response.json()["id"]
+
+    me_response = client.get("/me", headers=patient_headers(actor_id))
+    list_response = client.get("/patients", headers=patient_headers(actor_id))
+    get_response = client.get(
+        f"/patients/{patient_id}",
+        headers=patient_headers(actor_id),
+    )
+
+    assert me_response.status_code == 200
+    assert me_response.json()["grants"][0] == {
+        "patient_id": patient_id,
+        "role": "patient",
+        "permissions": ["patient:*"],
+        "source": "owned_profile",
+    }
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == [
+        {
+            "id": patient_id,
+            "full_name": "Loadable Patient",
+            "primary_language": "en",
+        }
+    ]
+    assert get_response.status_code == 200
+    assert get_response.json()["id"] == patient_id
+
+
 def test_patient_scope_denies_cross_patient_access_without_grant() -> None:
     actor_a = str(uuid4())
     actor_b = str(uuid4())
@@ -148,7 +184,9 @@ def test_document_upload_requires_idempotency_key_and_returns_blocked_processing
     assert payload["upload"]["method"] == "PUT"
 
 
-def test_agent_message_returns_stubbed_response_with_audit_id() -> None:
+def test_agent_message_returns_stubbed_response_with_audit_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_RUNTIME_ADAPTER", "mock")
+    monkeypatch.setenv("AGENT_RUNTIME_PROVIDER", "mock")
     patient_id = str(uuid4())
     response = client.post(
         "/agent/messages",
@@ -157,5 +195,5 @@ def test_agent_message_returns_stubbed_response_with_audit_id() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["response"].startswith("Stub agent response")
+    assert response.json()["response"].startswith("Mock agent runtime response")
     assert response.json()["audit_log_id"]

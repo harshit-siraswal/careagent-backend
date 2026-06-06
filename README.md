@@ -2,6 +2,12 @@
 
 This directory contains the backend API and data-platform contract for the CareAgent MVP. It is designed for a FastAPI, PostgreSQL, Redis/queue, object-storage, and background-worker implementation.
 
+Before backend-specific work, read the canonical project handbook in the frontend/planning repo:
+
+- `C:\Users\ASUS\Desktop\careagent\docs\24-ai-system-architecture-and-project-handbook.md`
+
+That handbook is the shared source for active repos, Firebase/Supabase architecture, current implementation state, MVP build order, safety boundaries, and AI/coding-agent restart context.
+
 ## Contents
 
 - `migrations/001_initial_backend_platform.sql` - PostgreSQL schema for auth identities, patient-scoped RBAC, consent ledger, observations, documents, medicines, risk, escalation, agent calls, outbox events, idempotency, and audit logs.
@@ -39,12 +45,17 @@ This directory contains the backend API and data-platform contract for the CareA
 
 ## Backend API Skeleton
 
-This branch includes a minimal FastAPI skeleton for local contract iteration. It does not integrate a real auth provider, database, object storage, or queue yet. Auth, patient scope, and audit behavior are placeholder hooks:
+This branch includes the FastAPI skeleton plus pilot runtime wiring for Firebase
+Auth and Supabase/Postgres-backed persistence. It is still a pilot backend, not a
+production health system, because real channel providers, queues, object
+storage, document intelligence, and full policy-mediated agent tooling remain incomplete:
 
 - Authenticated routes require `Authorization: Bearer <token>`.
-- The placeholder actor is supplied with `X-CareAgent-Role`, `X-CareAgent-Patient-Id`, and `X-CareAgent-Permissions`.
+- `CAREAGENT_AUTH_MODE=firebase` validates Firebase ID tokens and maps them to CareAgent accounts.
+- Local/test mode can still supply a placeholder actor with `X-CareAgent-Role`, `X-CareAgent-Patient-Id`, and `X-CareAgent-Permissions`.
+- `DATABASE_URL` enables the Postgres repository path; without it, non-production local runs use the in-memory repository.
 - PHI routes call patient-scope checks and append audit events to request state.
-- Idempotent stubs such as document upload and escalation start require `Idempotency-Key`.
+- Idempotent flows such as document upload and escalation start require `Idempotency-Key`.
 
 ## Pilot Runtime Configuration
 
@@ -56,7 +67,8 @@ The backend now supports a pilot production mode:
 - `CORS_ALLOWED_ORIGINS` must include the Vercel frontend URL.
 - `TRUSTED_HOSTS` must include the deployed API host.
 - `ENABLE_API_DOCS=false` is required for production startup.
-- `AGENT_RUNTIME_ADAPTER=mock` and `AGENT_RUNTIME_PROVIDER=mock` keep agent actions simulation-only.
+- `AGENT_RUNTIME_ADAPTER=groq`, `AGENT_RUNTIME_PROVIDER=groq`, and backend-only `GROQ_API_KEY` enable Groq-backed in-app AI replies.
+- `AGENT_RUNTIME_ADAPTER=mock` and `AGENT_RUNTIME_PROVIDER=mock` keep agent replies deterministic and no-network for tests/offline runs.
 - `VOICE_PROVIDER_ADAPTER=mock` keeps voice calls fully simulated.
 - `VOICE_PROVIDER_ADAPTER=make_mcp` enables the Make MCP voice adapter, but only for simulation calls unless `MAKE_MCP_ALLOW_REAL_CALLS=true` in a non-production environment.
 - `MAKE_MCP_SERVER_URL`, `MAKE_MCP_BEARER_TOKEN`, and `MAKE_MCP_CALL_TOOL_NAME` are required when the Make adapter is enabled. Do not commit these values.

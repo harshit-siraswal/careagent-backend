@@ -44,6 +44,7 @@ from app.schemas import (
     UploadTarget,
 )
 from app.schemas.common import VitalReading, utcnow
+from app.services.risk_engine import evaluate_observations
 
 
 T = TypeVar("T")
@@ -369,11 +370,20 @@ class InMemoryCareRepository:
             Observation(**observation.model_dump(), patient_id=patient_id)
             for observation in body.observations
         ]
-        response = ObservationBatchCreateResponse(accepted_count=len(observations))
         with self._lock:
             for observation in observations:
                 self._observations[observation.id] = observation
-            return response
+            risk_events = [
+                self._create_risk_event_locked(patient_id, RiskEventCreateRequest(**evaluation.as_risk_event_create_request()))
+                for evaluation in evaluate_observations(
+                    [_risk_observation_payload(observation) for observation in observations],
+                    patient_id=str(patient_id),
+                )
+            ]
+            return ObservationBatchCreateResponse(
+                accepted_count=len(observations),
+                risk_events=[event.model_dump(mode="json") for event in risk_events],
+            )
 
     def list_observations(
         self,
@@ -509,6 +519,14 @@ class InMemoryCareRepository:
             return DocumentDetailResponse(document=_copy(updated), facts=[_copy(fact) for fact in reviewed])
 
     def create_risk_event(self, patient_id: UUID, body: RiskEventCreateRequest) -> RiskEvent:
+        with self._lock:
+            return self._create_risk_event_locked(patient_id, body)
+
+    def _create_risk_event_locked(self, patient_id: UUID, body: RiskEventCreateRequest) -> RiskEvent:
+        if body.idempotency_key:
+            for existing in self._risk_events.values():
+                if existing.patient_id == patient_id and existing.idempotency_key == body.idempotency_key:
+                    return _copy(existing)
         risk_event = RiskEvent(**body.model_dump(), patient_id=patient_id)
         alert = Alert(
             patient_id=patient_id,
@@ -517,10 +535,9 @@ class InMemoryCareRepository:
             title=f"{risk_event.severity.title()} risk detected",
             body=risk_event.reason,
         )
-        with self._lock:
-            self._risk_events[risk_event.id] = risk_event
-            self._alerts[alert.id] = alert
-            return _copy(risk_event)
+        self._risk_events[risk_event.id] = risk_event
+        self._alerts[alert.id] = alert
+        return _copy(risk_event)
 
     def list_alerts(self, patient_id: UUID) -> list[Alert]:
         with self._lock:
@@ -945,17 +962,19 @@ class PostgresCareRepository:
 
     def create_observations(self, patient_id: UUID, body: ObservationBatchCreateRequest) -> ObservationBatchCreateResponse:
         with self._connect() as conn:
+            observations: list[Observation] = []
             for observation in body.observations:
                 value = observation.value
                 numeric = value if isinstance(value, int | float) and not isinstance(value, bool) else None
                 text = None if numeric is not None else str(value)
-                conn.execute(
+                row = conn.execute(
                     """
                     insert into observations (
                       patient_id, device_id, metric_code, value_numeric, value_text,
                       unit, observed_at, source_type, reliability_tier, confidence
                     )
                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    returning *
                     """,
                     (
                         patient_id,
@@ -969,8 +988,19 @@ class PostgresCareRepository:
                         observation.reliability_tier,
                         observation.confidence,
                     ),
+                ).fetchone()
+                observations.append(_observation(row))
+            risk_events = [
+                self._create_risk_event_with_conn(conn, patient_id, RiskEventCreateRequest(**evaluation.as_risk_event_create_request()))
+                for evaluation in evaluate_observations(
+                    [_risk_observation_payload(observation) for observation in observations],
+                    patient_id=str(patient_id),
                 )
-            return ObservationBatchCreateResponse(accepted_count=len(body.observations))
+            ]
+            return ObservationBatchCreateResponse(
+                accepted_count=len(body.observations),
+                risk_events=[event.model_dump(mode="json") for event in risk_events],
+            )
 
     def list_observations(
         self,
@@ -1133,22 +1163,40 @@ class PostgresCareRepository:
 
     def create_risk_event(self, patient_id: UUID, body: RiskEventCreateRequest) -> RiskEvent:
         with self._connect() as conn:
-            row = conn.execute(
-                """
-                insert into risk_events (patient_id, severity, confidence, reason, evidence_json, rule_id)
-                values (%s, %s, %s, %s, %s, %s)
-                returning *
-                """,
-                (patient_id, body.severity, body.confidence, body.reason, _json(body.evidence), body.rule_id),
+            return self._create_risk_event_with_conn(conn, patient_id, body)
+
+    def _create_risk_event_with_conn(self, conn: Any, patient_id: UUID, body: RiskEventCreateRequest) -> RiskEvent:
+        if body.idempotency_key:
+            existing = conn.execute(
+                "select * from risk_events where patient_id = %s and idempotency_key = %s",
+                (patient_id, body.idempotency_key),
             ).fetchone()
-            conn.execute(
-                """
-                insert into alerts (patient_id, risk_event_id, severity, title, body)
-                values (%s, %s, %s, %s, %s)
-                """,
-                (patient_id, row["id"], body.severity, f"{body.severity.title()} risk detected", body.reason),
-            )
-            return _risk_event(row, recommended_action=body.recommended_action)
+            if existing:
+                return _risk_event(existing, recommended_action=body.recommended_action)
+        row = conn.execute(
+            """
+            insert into risk_events (patient_id, severity, confidence, reason, evidence_json, rule_id, idempotency_key)
+            values (%s, %s, %s, %s, %s, %s, %s)
+            returning *
+            """,
+            (
+                patient_id,
+                body.severity,
+                body.confidence,
+                body.reason,
+                _json(body.evidence),
+                _db_rule_id(body.rule_id),
+                body.idempotency_key,
+            ),
+        ).fetchone()
+        conn.execute(
+            """
+            insert into alerts (patient_id, risk_event_id, severity, title, body)
+            values (%s, %s, %s, %s, %s)
+            """,
+            (patient_id, row["id"], body.severity, f"{body.severity.title()} risk detected", body.reason),
+        )
+        return _risk_event(row, recommended_action=body.recommended_action)
 
     def list_alerts(self, patient_id: UUID) -> list[Alert]:
         with self._connect() as conn:
@@ -1514,7 +1562,29 @@ def _risk_event(row: dict[str, Any], recommended_action: str | None = None) -> R
         resolved_at=payload.get("resolved_at"),
         rule_id=payload.get("rule_id"),
         recommended_action=recommended_action,
+        idempotency_key=payload.get("idempotency_key"),
     )
+
+
+def _risk_observation_payload(observation: Observation) -> dict[str, Any]:
+    value = observation.value
+    numeric = value if isinstance(value, int | float) and not isinstance(value, bool) else None
+    text = None if numeric is not None else str(value)
+    return {
+        "metric_code": observation.metric_code,
+        "value_numeric": numeric,
+        "value_text": text,
+        "unit": observation.unit,
+        "observed_at": observation.observed_at,
+        "source_type": observation.source_type,
+        "reliability_tier": observation.reliability_tier,
+        "confidence": observation.confidence,
+        "source_label": observation.source_type,
+    }
+
+
+def _db_rule_id(rule_id: UUID | str | None) -> UUID | None:
+    return rule_id if isinstance(rule_id, UUID) else None
 
 
 def _policy(conn: Any, row: dict[str, Any]) -> EscalationPolicy:

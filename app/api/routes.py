@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
+from app.agent.runtime import AgentRuntimeMessage, AgentRuntimeProviderError, AgentRuntimeRequest
 from app.core.audit import audit
 from app.core.security import Actor, can_bootstrap_patient, current_actor, optional_actor, require_patient_scope, require_permission
 from app.schemas import (
@@ -60,11 +61,21 @@ from app.schemas import (
     VitalReading,
 )
 from app.schemas.common import utcnow
+from app.services.agent_runtime import AgentRuntimeConfigurationError, build_agent_runtime_adapter
 from app.services.care_data import care_repository
 
 router = APIRouter()
 AuthDep = Annotated[Actor, Depends(current_actor)]
 OptionalAuthDep = Annotated[Actor, Depends(optional_actor)]
+
+AGENT_SYSTEM_PROMPT = (
+    "You are CareAgent's health coordination assistant. Provide general, non-diagnostic "
+    "health organization support. Do not diagnose, prescribe, change medication, or claim "
+    "that emergency help has been contacted. If the user describes a possible emergency, "
+    "tell them to contact local emergency services immediately. Do not trigger calls, "
+    "messages, or other side effects unless a backend-authorized tool call is explicitly "
+    "provided."
+)
 
 
 def _not_found(resource_type: str, resource_id: UUID) -> None:
@@ -110,13 +121,24 @@ def me(request: Request, actor: AuthDep) -> MeResponse:
     audit(request, actor=actor, action="auth.me_viewed", resource_type="user_account")
     grants = care_repository.list_actor_grants(actor.user_id)
     if actor.patient_id is not None:
-        grants.insert(0, {"patient_id": actor.patient_id, "role": actor.role, "permissions": sorted(actor.permissions)})
+        owner_permissions = (
+            ["patient:*"] if actor.role == "patient" else sorted(actor.permissions)
+        )
+        grants.insert(
+            0,
+            {
+                "patient_id": actor.patient_id,
+                "role": actor.role,
+                "permissions": owner_permissions,
+                "source": "owned_profile" if actor.role == "patient" else "grant",
+            },
+        )
     return MeResponse(id=actor.user_id, role=actor.role, grants=grants)
 
 
 @router.post("/patients", response_model=PatientProfile, status_code=status.HTTP_201_CREATED, tags=["Patients"])
 def create_patient(request: Request, body: PatientCreateRequest, actor: AuthDep) -> PatientProfile:
-    if can_bootstrap_patient(actor):
+    if actor.role == "patient":
         existing_patient_id = care_repository.account_patient_id(actor.user_id)
         if existing_patient_id is not None:
             raise HTTPException(
@@ -127,7 +149,7 @@ def create_patient(request: Request, body: PatientCreateRequest, actor: AuthDep)
                     "details": {"patient_id": str(existing_patient_id)},
                 },
             )
-    else:
+    if not can_bootstrap_patient(actor):
         require_permission(actor, "patient:write")
     patient = care_repository.create_patient(body, account_id=actor.user_id)
     audit(request, actor=actor, action="patient.profile_created", resource_type="patient_profile", patient_id=patient.id, phi_access=True)
@@ -260,7 +282,25 @@ def list_observations(
 def create_observations(request: Request, patient_id: UUID, body: ObservationBatchCreateRequest, actor: AuthDep) -> ObservationBatchCreateResponse:
     require_patient_scope(actor, patient_id, "observations:write")
     audit(request, actor=actor, action="observation.created", resource_type="observation", patient_id=patient_id, phi_access=True, metadata={"accepted_count": len(body.observations)})
-    return care_repository.create_observations(patient_id, body)
+    response = care_repository.create_observations(patient_id, body)
+    for risk_event in response.risk_events:
+        risk_event_id = risk_event.get("id")
+        audit(
+            request,
+            actor=actor,
+            action="risk_event.created",
+            resource_type="risk_event",
+            patient_id=patient_id,
+            resource_id=UUID(str(risk_event_id)) if risk_event_id else None,
+            phi_access=True,
+            reason=risk_event.get("reason"),
+            metadata={
+                "source": "observation_ingestion",
+                "severity": risk_event.get("severity"),
+                "recommended_action": risk_event.get("recommended_action"),
+            },
+        )
+    return response
 
 
 @router.get("/patients/{patient_id}/observations/{observation_id}", response_model=Observation, tags=["Observations"])
@@ -502,7 +542,47 @@ def agent_message(request: Request, body: AgentMessageRequest, actor: AuthDep) -
     require_patient_scope(actor, body.patient_id, "agent:write")
     conversation_id = body.conversation_id or uuid4()
     audit_id = audit(request, actor=actor, action="agent.message_received", resource_type="message", patient_id=body.patient_id, phi_access=True, metadata={"channel": body.channel, "has_attachments": bool(body.attachments)})
-    return AgentMessageResponse(conversation_id=conversation_id, response="Stub agent response pending orchestration integration.", audit_log_id=audit_id)
+    runtime_request = AgentRuntimeRequest(
+        request_id=getattr(request.state, "request_id", str(uuid4())),
+        patient_id=str(body.patient_id),
+        conversation_id=str(conversation_id),
+        messages=(
+            AgentRuntimeMessage(role="system", content=AGENT_SYSTEM_PROMPT),
+            AgentRuntimeMessage(
+                role="user",
+                content=(
+                    f"Channel: {body.channel}\n"
+                    f"Attachments present: {bool(body.attachments)}\n\n"
+                    f"User message:\n{body.message}"
+                ),
+                metadata={
+                    "channel": body.channel,
+                    "attachment_count": len(body.attachments),
+                },
+            ),
+        ),
+        metadata={
+            "audit_log_id": str(audit_id),
+            "source": "api.agent.messages",
+        },
+    )
+    try:
+        runtime_response = build_agent_runtime_adapter().generate(runtime_request)
+    except (AgentRuntimeConfigurationError, AgentRuntimeProviderError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "agent_runtime_unavailable",
+                "message": "The AI assistant is temporarily unavailable.",
+            },
+        ) from exc
+
+    return AgentMessageResponse(
+        conversation_id=conversation_id,
+        response=runtime_response.output_text,
+        citations=[],
+        audit_log_id=audit_id,
+    )
 
 
 @router.post("/agent/tools/{tool_name}", response_model=AgentToolResponse, tags=["Agent"])

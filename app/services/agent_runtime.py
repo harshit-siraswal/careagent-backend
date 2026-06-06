@@ -9,6 +9,7 @@ from app.agent.runtime import (
     DEFAULT_PROVIDER_MODELS,
     AgentRuntimeAdapter,
     AgentRuntimeConfig,
+    GroqAgentRuntimeAdapter,
     MockAgentRuntimeAdapter,
 )
 
@@ -39,12 +40,18 @@ def build_agent_runtime_config(environ: Mapping[str, str] | None = None) -> Agen
 
 def build_agent_runtime_adapter(config: AgentRuntimeConfig | None = None) -> AgentRuntimeAdapter:
     runtime_config = config or build_agent_runtime_config()
-    if runtime_config.adapter_name != "mock":
+    if runtime_config.adapter_name == "mock":
+        return MockAgentRuntimeAdapter(runtime_config)
+    if runtime_config.adapter_name == "groq":
+        return GroqAgentRuntimeAdapter(runtime_config)
+    if runtime_config.provider == "groq":
         raise AgentRuntimeConfigurationError(
-            f"Agent runtime adapter '{runtime_config.adapter_name}' is not implemented yet. "
-            "Use AGENT_RUNTIME_ADAPTER=mock until a provider adapter is added."
+            "Use AGENT_RUNTIME_ADAPTER=groq with AGENT_RUNTIME_PROVIDER=groq."
         )
-    return MockAgentRuntimeAdapter(runtime_config)
+    raise AgentRuntimeConfigurationError(
+        f"Agent runtime adapter '{runtime_config.adapter_name}' is not implemented yet. "
+        "Use AGENT_RUNTIME_ADAPTER=mock or AGENT_RUNTIME_ADAPTER=groq."
+    )
 
 
 def _read_env(environ: Mapping[str, str], name: str, default: str) -> str:

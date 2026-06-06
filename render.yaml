@@ -16,9 +16,13 @@ services:
       - key: CAREAGENT_AUTH_MODE
         value: firebase
       - key: AGENT_RUNTIME_ADAPTER
-        value: mock
+        value: groq
       - key: AGENT_RUNTIME_PROVIDER
-        value: mock
+        value: groq
+      - key: AGENT_RUNTIME_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false
       - key: VOICE_PROVIDER_ADAPTER
         value: mock
       - key: DOCUMENT_STORAGE_BUCKET

@@ -1,22 +1,24 @@
 # CareAgent Backend Remaining Work Report
 
-Date: 2026-05-08
+Date: 2026-06-06
 
 ## Current Backend State
 
-The backend repository contains a FastAPI contract skeleton, SQL migrations, OpenAPI contracts, channel/call templates, risk-engine logic, mock/simulation channel dispatch, emergency simulation fixtures, and automated tests.
+The backend repository contains a FastAPI contract skeleton, SQL migrations, OpenAPI contracts, channel/call templates, risk-engine logic, Groq-backed in-app AI reply support, mock/simulation channel dispatch, emergency simulation fixtures, and automated tests.
 
 Verification performed:
 
 - `python -m compileall app` passed.
-- `python -m pytest` passed with 30 tests.
+- `python -m pytest` passed with 59 tests.
 
 ## What Is Implemented
 
 - API route skeleton for auth/session, patients, care team, consents, devices, observations, latest vitals, documents, medicines, risk events, alerts, escalation policies, escalation runs, agent messages, agent tools, and audit logs.
 - Pydantic schemas for patient, document, medicine, risk, and agent contracts.
 - Risk-engine rules for SpO2, glucose, heart rate, blood pressure, temperature, fall detection, stale data, quality scoring, and idempotency-key generation.
+- Observation ingestion runs deterministic risk evaluation and creates risk events/alerts for abnormal readings in the repository path.
 - Agent tool contract validation and policy authorization helpers.
+- Groq `AgentRuntimeAdapter` for in-app AI replies, with backend-only `GROQ_API_KEY`, default Groq endpoint/model config, secret redaction, and tool calling disabled.
 - Mock channel dispatcher, template renderer, call script renderer, and idempotent dispatch behavior.
 - Escalation simulation engine with consent checks, channel verification checks, idempotency replay behavior, and mock provider outcomes.
 - Supabase/PostgreSQL migration contracts through `006_drop_generated_duplicate_indexes.sql`.
@@ -38,6 +40,7 @@ Verification performed:
 - Add NemoClaw deployment/profile evaluation for sandboxed production hardening.
 - Build a real agent tool server with authorization, consent, idempotency, rate limits, redaction, and audit.
 - Add conversation persistence, channel event routing, trace export, prompt versioning, and PHI-safe memory boundaries.
+- Harden Groq usage with PHI minimization, source-grounded retrieval, citations, prompt-injection evals, and user-facing error states.
 
 ### Channels, Calls, and Automatic Communication
 
@@ -62,7 +65,7 @@ Verification performed:
 ### Risk and Escalation
 
 - Persist and manage patient-specific risk thresholds.
-- Connect observation ingestion to risk evaluation through workers.
+- Move synchronous observation risk evaluation into durable worker/outbox processing for production scale.
 - Add durable escalation state machine execution, retry jobs, acknowledgement handling, and incident summary generation.
 - Add clinician/compliance review workflow for high-risk threshold changes.
 

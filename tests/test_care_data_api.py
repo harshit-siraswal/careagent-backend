@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -200,3 +201,44 @@ def test_observation_create_list_get_and_latest_vitals_use_in_memory_repository(
     assert get_response.json()["value"] == 92
     assert latest_response.status_code == 200
     assert {reading["metric_code"] for reading in latest_response.json()["readings"]} == {"heart_rate", "spo2"}
+
+
+def test_abnormal_manual_observation_creates_risk_event_and_alert() -> None:
+    patient_id = str(uuid4())
+    observed_at = datetime.now(UTC).isoformat()
+    response = client.post(
+        f"/patients/{patient_id}/observations",
+        headers=auth_headers(patient_id, "observations:write"),
+        json={
+            "observations": [
+                {
+                    "metric_code": "heart_rate",
+                    "value": 132,
+                    "unit": "bpm",
+                    "observed_at": observed_at,
+                    "source_type": "manual",
+                    "reliability_tier": "manual_or_ocr",
+                },
+            ],
+        },
+    )
+
+    alerts_response = client.get(
+        f"/patients/{patient_id}/alerts",
+        headers=auth_headers(patient_id, "alerts:read"),
+    )
+    audit_response = client.get(
+        f"/patients/{patient_id}/audit-logs",
+        headers=auth_headers(patient_id, "audit:read"),
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["accepted_count"] == 1
+    assert payload["risk_events"][0]["severity"] == "high"
+    assert payload["risk_events"][0]["recommended_action"] == "request_patient_confirmation"
+    assert payload["risk_events"][0]["idempotency_key"].startswith(f"risk:{patient_id}:heart_rate_high:v1:")
+    assert alerts_response.status_code == 200
+    assert alerts_response.json()["items"][0]["risk_event_id"] == payload["risk_events"][0]["id"]
+    assert audit_response.status_code == 200
+    assert "risk_event.created" in {item["action"] for item in audit_response.json()["items"]}

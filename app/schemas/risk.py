@@ -12,8 +12,10 @@ class RiskEventCreateRequest(BaseModel):
     confidence: float
     reason: str
     evidence: list[dict[str, Any]]
-    rule_id: UUID | None = None
+    rule_id: UUID | str | None = None
     recommended_action: str | None = None
+    idempotency_key: str | None = None
+    policy_flags: dict[str, Any] = Field(default_factory=dict)
 
 
 class RiskEvent(RiskEventCreateRequest):

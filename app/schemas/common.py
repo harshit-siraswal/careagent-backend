@@ -114,6 +114,7 @@ class ObservationBatchCreateResponse(BaseModel):
     accepted_count: int
     batch_id: UUID = Field(default_factory=uuid4)
     status: str = "accepted"
+    risk_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class VitalReading(BaseModel):
