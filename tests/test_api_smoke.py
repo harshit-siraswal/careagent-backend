@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.main import app
 from app.services.care_data import care_repository
 
@@ -138,6 +139,45 @@ def test_patient_bootstrap_is_loadable_without_patient_header() -> None:
     ]
     assert get_response.status_code == 200
     assert get_response.json()["id"] == patient_id
+
+
+def test_firebase_first_sign_in_can_initialize_caretaker_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Verifier:
+        def verify_token(self, token: str) -> dict[str, str]:
+            return {
+                "uid": "firebase-caretaker-user",
+                "email": "meera@example.com",
+                "name": "Meera Sharma",
+            }
+
+    monkeypatch.setenv("CAREAGENT_AUTH_MODE", "firebase")
+    monkeypatch.setattr("app.core.security.get_firebase_verifier", Verifier)
+    get_settings.cache_clear()
+
+    try:
+        response = client.get(
+            "/me",
+            headers={
+                "Authorization": "Bearer firebase-token",
+                "X-CareAgent-Role": "caretaker",
+            },
+        )
+        repeat = client.get(
+            "/me",
+            headers={
+                "Authorization": "Bearer firebase-token",
+                "X-CareAgent-Role": "patient",
+            },
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "caretaker"
+    assert repeat.status_code == 200
+    assert repeat.json()["role"] == "caretaker"
 
 
 def test_patient_scope_denies_cross_patient_access_without_grant() -> None:

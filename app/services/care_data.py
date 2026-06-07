@@ -67,6 +67,7 @@ class CareRepository(Protocol):
         email: str | None,
         display_name: str | None,
         claims: dict[str, Any],
+        initial_role: str = "patient",
     ) -> ActorAccount: ...
 
     def list_actor_grants(self, account_id: UUID) -> list[dict[str, Any]]: ...
@@ -211,12 +212,13 @@ class InMemoryCareRepository:
         email: str | None,
         display_name: str | None,
         claims: dict[str, Any],
+        initial_role: str = "patient",
     ) -> ActorAccount:
         with self._lock:
             existing_id = self._firebase_identities.get(subject)
             if existing_id is not None:
                 return self._account_with_patient(existing_id)
-            account = ActorAccount(id=uuid4())
+            account = ActorAccount(id=uuid4(), role=initial_role)
             self._accounts[account.id] = account
             self._firebase_identities[subject] = account.id
             return account
@@ -659,6 +661,7 @@ class PostgresCareRepository:
         email: str | None,
         display_name: str | None,
         claims: dict[str, Any],
+        initial_role: str = "patient",
     ) -> ActorAccount:
         with self._connect() as conn:
             existing = conn.execute(
@@ -681,10 +684,14 @@ class PostgresCareRepository:
             account = conn.execute(
                 """
                 insert into user_accounts (email, display_name, role, status)
-                values (%s, %s, 'patient', 'active')
+                values (%s, %s, %s, 'active')
                 returning id, role
                 """,
-                (email or f"firebase-{subject}@careagent.local", display_name),
+                (
+                    email or f"firebase-{subject}@careagent.local",
+                    display_name,
+                    initial_role,
+                ),
             ).fetchone()
             conn.execute(
                 """

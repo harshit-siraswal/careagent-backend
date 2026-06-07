@@ -36,6 +36,8 @@ ALL_PERMISSIONS = {
     "audit:read",
 }
 
+PUBLIC_ACCOUNT_ROLES = {"patient", "caretaker"}
+
 
 @dataclass(frozen=True)
 class Actor:
@@ -69,7 +71,12 @@ def current_actor(
     token = authorization.split(" ", 1)[1].strip()
     settings = get_settings()
     if settings.require_firebase:
-        actor = _actor_from_firebase_token(request, token, x_request_id)
+        actor = _actor_from_firebase_token(
+            request,
+            token,
+            x_request_id,
+            x_careagent_role,
+        )
         _apply_actor(request, actor)
         return actor
 
@@ -169,6 +176,7 @@ def _actor_from_firebase_token(
     request: Request,
     token: str,
     x_request_id: str | None,
+    x_careagent_role: str,
 ) -> Actor:
     claims = get_firebase_verifier().verify_token(token)
     subject = str(claims.get("uid") or claims.get("sub") or "")
@@ -182,6 +190,7 @@ def _actor_from_firebase_token(
         email=claims.get("email"),
         display_name=claims.get("name"),
         claims=claims,
+        initial_role=_initial_firebase_account_role(x_careagent_role, claims),
     )
     grants = care_repository.list_actor_grants(account.id)
     permissions: set[str] = set()
@@ -201,6 +210,16 @@ def _actor_from_firebase_token(
     )
     request.state.firebase_claims = claims
     return actor
+
+
+def _initial_firebase_account_role(
+    requested_role: str,
+    claims: dict[str, object],
+) -> str:
+    claim_role = claims.get("careagent_role") or claims.get("role")
+    if isinstance(claim_role, str) and claim_role in PUBLIC_ACCOUNT_ROLES:
+        return claim_role
+    return requested_role if requested_role in PUBLIC_ACCOUNT_ROLES else "patient"
 
 
 def _apply_actor(request: Request, actor: Actor) -> None:
